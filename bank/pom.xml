@@ -9,10 +9,10 @@
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.tut2.group3</groupId>
-    <artifactId>store</artifactId>
+    <artifactId>bank</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>store</name>
-    <description>store</description>
+    <name>bank</name>
+    <description>bank</description>
     <url/>
     <licenses>
         <license/>
@@ -34,6 +34,17 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
+<!-- Spring Transaction Support -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-tx</artifactId>
+        </dependency>
+<!--ModelMapper-->
+        <dependency>
+            <groupId>org.modelmapper</groupId>
+            <artifactId>modelmapper</artifactId>
+            <version>3.1.1</version>
+        </dependency>
 <!--JWT Authorization-->
         <dependency>
             <groupId>com.auth0</groupId>
@@ -44,10 +55,15 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
-<!--Mybatis-plus-->
+<!-- MyBatis Plus -->
+        <dependency>
+            <groupId>org.mybatis</groupId>
+            <artifactId>mybatis-spring</artifactId>
+            <version>3.0.3</version>
+        </dependency>
         <dependency>
             <groupId>com.baomidou</groupId>
-            <artifactId>mybatis-plus-core</artifactId>
+            <artifactId>mybatis-plus-boot-starter</artifactId>
             <version>3.5.14</version>
         </dependency>
 <!--Mysql-driver-->
@@ -99,6 +115,7 @@
                         <path>
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
+                            <version>1.18.30</version>
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
