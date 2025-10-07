@@ -4,29 +4,31 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-//
 @AllArgsConstructor
 @NoArgsConstructor
-
 @Data
 public class Result<T> {
-    private int code;   //status code, 200=success; 400=parameter wrong; 500=server error
+    private int code;
     private String message;
     private T data;
 
-    //  success: without data
+    // success (no data)
     public static <T> Result<T> success() {
-        return new Result<T>(200, "success", null);
+        return new Result<>(ErrorCode.SUCCESS.getCode(), ErrorCode.SUCCESS.getMessage(), null);
     }
 
-    //success: with data
+    // success (with data)
     public static <T> Result<T> success(T data) {
-        return new Result<T>(200, "success", data);
+        return new Result<>(ErrorCode.SUCCESS.getCode(), ErrorCode.SUCCESS.getMessage(), data);
     }
 
-    //error
-    public static <T> Result<T> error(int code, String message) {
-        return new Result<T>(code, message, null);
+    // use predefined error code
+    public static <T> Result<T> error(ErrorCode errorCode) {
+        return new Result<>(errorCode.getCode(), errorCode.getMessage(), null);
     }
 
+    // custom error message
+    public static <T> Result<T> error(ErrorCode errorCode, String customMessage) {
+        return new Result<>(errorCode.getCode(), customMessage, null);
+    }
 }
