@@ -1,11 +1,13 @@
 package com.tut2.group3.store.entity;
 
+import com.baomidou.mybatisplus.annotation.TableName;
 import jakarta.validation.constraints.NotEmpty;
 import lombok.Data;
 
 import java.time.LocalDateTime;
 
 @Data
+@TableName("orders")
 public class Order {
     private String id;
     private String orderNo;

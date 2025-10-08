@@ -1,4 +1,8 @@
 package com.tut2.group3.store.mapper;
 
-public interface UserMapper {
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.tut2.group3.store.entity.User;
+
+public interface UserMapper extends BaseMapper<User> {
+
 }
