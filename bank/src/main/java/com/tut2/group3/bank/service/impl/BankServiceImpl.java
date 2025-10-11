@@ -9,6 +9,7 @@ import com.tut2.group3.bank.entity.Account;
 import com.tut2.group3.bank.entity.Transaction;
 import com.tut2.group3.bank.entity.enums.TransactionStatus;
 import com.tut2.group3.bank.entity.enums.TransactionType;
+import com.tut2.group3.bank.producer.BankEventPublisher;
 import com.tut2.group3.bank.repository.AccountRepository;
 import com.tut2.group3.bank.repository.TransactionRepository;
 import com.tut2.group3.bank.service.BankService;
@@ -29,6 +30,7 @@ public class BankServiceImpl implements BankService {
     private final TransactionRepository transactionRepository;
     private final AccountRepository accountRepository;
     private final ModelMapper modelMapper;
+    private final BankEventPublisher bankEventPublisher;
 
     @Override
     @Transactional
@@ -71,6 +73,7 @@ public class BankServiceImpl implements BankService {
             transaction.setMessage("Debit succeeded");
             transactionRepository.updateById(transaction);
             log.info("Transaction id={} succeeded; new balance={}", transaction.getId(), account.getBalance());
+            bankEventPublisher.publishTransactionResult(transaction);
             return Result.success(transaction);
         }
 
@@ -141,6 +144,7 @@ public class BankServiceImpl implements BankService {
             refund.setMessage("Refund succeeded");
             transactionRepository.updateById(refund);
             log.info("Refund transaction id={} succeeded; new balance={}", refund.getId(), account.getBalance());
+            bankEventPublisher.publishTransactionResult(refund);
             return Result.success(refund);
         }
 
@@ -162,6 +166,7 @@ public class BankServiceImpl implements BankService {
         transaction.setMessage(message);
         transactionRepository.updateById(transaction);
         log.warn("Transaction id={} failed: {}", transaction.getId(), message);
+        bankEventPublisher.publishTransactionResult(transaction);
         return Result.error(errorCode, message);
     }
 
