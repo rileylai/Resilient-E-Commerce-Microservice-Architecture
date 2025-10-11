@@ -1,7 +1,7 @@
 # Bank Service README
 
 ## 1. Project Overview
-This bank service is part of our small e-commerce platform. It manages payment tasks for customer orders. The service handles debit and refund logic, talks to the database, protects calls with JWT, and exchanges messages with RabbitMQ. This document gives new teammates a quick start guide in simple English.
+This bank service is part of our small e-commerce platform. It manages payment tasks for customer orders. The service handles debit and refund logic, talks to the database, protects calls with JWT, and exchanges messages with RabbitMQ. This document gives you a quick start guide.
 
 ## 2. Main Features
 - **Debit flow**: When the store asks for a debit, we check the user account, confirm the currency, and make sure enough balance exists. If the debit passes, we subtract money and mark the transaction as `SUCCEEDED`. If not, we mark it as `FAILED`.
@@ -79,8 +79,8 @@ bank.rabbitmq.request-queue=bank.transaction.requests
 ## 8. API Endpoints
 | Method | Path                | Description                       | Body Example |
 |--------|---------------------|-----------------------------------|--------------|
-| POST   | `/api/bank/debit`   | Debit a user account              | ```json<br>{<br>  "orderId": "ORD-12345",<br>  "userId": "USER-1001",<br>  "amount": 50.00,<br>  "currency": "USD"<br>}``` |
-| POST   | `/api/bank/refund`  | Refund a user account             | ```json<br>{<br>  "orderId": "ORD-12345",<br>  "amount": 50.00,<br>  "currency": "USD"<br>}``` |
+| POST   | `/api/bank/debit`   | Debit a user account              | ```json<br>{<br>  "orderId": "order001",<br>  "userId": "1",<br>  "amount": 50.00,<br>  "currency": "AUD"<br>}``` |
+| POST   | `/api/bank/refund`  | Refund a user account             | ```json<br>{<br>  "orderId": "order001,<br>  "amount": 50.00,<br>  "currency": "AUD"<br>}``` |
 
 **Note:** Every request must have the header `Authorization: Bearer <your-token>`.
 
@@ -108,10 +108,6 @@ bank.rabbitmq.request-queue=bank.transaction.requests
   **Fix:** Provide a valid JWT in the `Authorization` header, or request a new token from the auth service.
 - **Problem:** `Duplicate debit seen in logs`.  
   **Fix:** Confirm the incoming messages have unique `idempotencyKey`. If the store retries, the bank will skip duplicates but still log them.
-
-## 12. License and Contact
-- **License:** MIT License (sample text, replace with the agreed license).
-- **Contact:** For questions please email `group3-bank@example.com`. For urgent issues ping the team channel.
 
 ---
 
