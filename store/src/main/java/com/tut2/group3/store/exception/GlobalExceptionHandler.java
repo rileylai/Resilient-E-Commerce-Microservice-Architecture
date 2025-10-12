@@ -1,28 +1,20 @@
 package com.tut2.group3.store.exception;
 
-import com.tut2.group3.store.entity.Result;
-import org.springframework.util.StringUtils;
+import com.tut2.group3.store.pojo.Result;
+import com.tut2.group3.store.exception.BusinessException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(IllegalArgumentException.class)
-    public Result<?> handleIllegalArgumentException(IllegalArgumentException e) {
-        return Result.error(400,
-                StringUtils.hasLength(e.getMessage()) ? e.getMessage() : "Invalid parameter");
-    }
-
     @ExceptionHandler(BusinessException.class)
-    public Result<?> handleBusinessException(BusinessException e) {
-        // BusinessException 可以自带错误码
-        return Result.error(e.getCode(), e.getMessage());
+    public Result<?> handleBusinessException(BusinessException ex) {
+        return Result.error(ex.getCode(), ex.getMessage());
     }
 
     @ExceptionHandler(Exception.class)
-    public Result<?> handleGenericException(Exception e) {
-        return Result.error(500,
-                StringUtils.hasLength(e.getMessage()) ? e.getMessage() : "Internal server error");
+    public Result<?> handleOtherException(Exception ex) {
+        return Result.error("server error：" + ex.getMessage());
     }
 }

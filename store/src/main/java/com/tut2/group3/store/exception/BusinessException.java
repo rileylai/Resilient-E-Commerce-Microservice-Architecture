@@ -1,26 +1,14 @@
 package com.tut2.group3.store.exception;
 
 public class BusinessException extends RuntimeException {
+    private final Integer code;
 
-    private final int code;
-
-    public BusinessException(int code, String message) {
+    public BusinessException(Integer code, String message) {
         super(message);
         this.code = code;
     }
 
-    public BusinessException(String message) {
-        this(400, message);
-    }
-
-    public BusinessException(int code, String message, Throwable cause) {
-        super(message, cause);
-        this.code = code;
-    }
-
-    // Getter
-    public int getCode() {
+    public Integer getCode() {
         return code;
     }
-
 }

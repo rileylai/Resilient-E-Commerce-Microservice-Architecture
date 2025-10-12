@@ -1,32 +1,35 @@
--- DROP TABLE IF EXISTS order_item;
--- DROP TABLE IF EXISTS orders;
--- DROP TABLE IF EXISTS users;
 -- users
 CREATE TABLE IF NOT EXISTS users (
-     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-     username VARCHAR(50) NOT NULL UNIQUE,
-     password_hash VARCHAR(255) NOT NULL,
-     email VARCHAR(100),
-     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `user_name` VARCHAR(50) NOT NULL,
+    `password` VARCHAR(100) NOT NULL,
+    `email` VARCHAR(100) DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_user_name` (`user_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 
 -- orders
 CREATE TABLE IF NOT EXISTS orders (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    user_id BIGINT UNSIGNED NOT NULL,
-    status VARCHAR(30) NOT NULL,
-    total_amount DECIMAL(10,2) NOT NULL,
-    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    CONSTRAINT fk_order_user FOREIGN KEY (user_id) REFERENCES users(id)
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `user_id` BIGINT UNSIGNED NOT NULL,
+    `status` VARCHAR(30) NOT NULL,
+    `total_amount` DECIMAL(10,2) NOT NULL,
+    `create_time` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `update_time` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    CONSTRAINT `fk_order_user` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 
 -- order_item
 CREATE TABLE IF NOT EXISTS order_item (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    order_id BIGINT UNSIGNED NOT NULL,
-    product_id BIGINT UNSIGNED NOT NULL,
-    quantity INT NOT NULL,
-    price DECIMAL(10,2) NOT NULL,
-    CONSTRAINT fk_order_item_order FOREIGN KEY (order_id) REFERENCES orders(id)
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `order_id` BIGINT UNSIGNED NOT NULL,
+    `product_id` BIGINT UNSIGNED NOT NULL,
+    `quantity` INT NOT NULL,
+    `price` DECIMAL(10,2) NOT NULL,
+    PRIMARY KEY (`id`),
+    CONSTRAINT `fk_order_item_order` FOREIGN KEY (`order_id`) REFERENCES `orders`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
