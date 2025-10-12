@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: warehouse-service
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/warehouse?useSSL=false&serverTimezone=UTC&createDatabaseIfNotExist=true
+    username: warehouse
+    password: warehouse_pwd
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: admin
+    password: admin
+
+server:
+  port: 8082
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.tut2.group3.warehouse.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      # Auto-fill strategy for timestamps
+      insert-strategy: not_null
+      update-strategy: not_null
+
+jwt:
+  secret: your-secret-key-change-this-in-production
+  expiration: 86400000
+
+logging:
+  level:
+    com.tut2.group3.warehouse: DEBUG
+    com.baomidou.mybatisplus: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+  file:
+    name: logs/warehouse.log
