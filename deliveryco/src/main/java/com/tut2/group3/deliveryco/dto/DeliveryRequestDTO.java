@@ -32,7 +32,7 @@ public class DeliveryRequestDTO {
     private String customerEmail;
 
     /**
-     * List of warehouse IDs where products are located
+     * List of warehouse where products are located
      */
     private List<Long> warehouseIds;
 
