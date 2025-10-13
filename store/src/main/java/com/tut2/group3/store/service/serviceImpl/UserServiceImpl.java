@@ -1,13 +1,17 @@
 package com.tut2.group3.store.service.serviceImpl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.tut2.group3.store.dto.LoginDto;
 import com.tut2.group3.store.dto.RegisterDto;
+import com.tut2.group3.store.dto.UserDto;
 import com.tut2.group3.store.exception.BusinessException;
 import com.tut2.group3.store.mapper.UserMapper;
 import com.tut2.group3.store.pojo.User;
 import com.tut2.group3.store.service.UserService;
 import com.tut2.group3.store.util.Md5Utils;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -64,6 +68,20 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             throw new BusinessException(401, "Invalid password");
         }
         return user;
+    }
+
+    @Override
+    public UserDto findByUsername(String username) {
+        LambdaQueryWrapper<User> queryWrapper = Wrappers.<User>lambdaQuery();
+        queryWrapper.eq(User::getUsername, username);
+
+        User user = userMapper.selectOne(queryWrapper);
+        if (user == null) {
+            return null;
+        }
+        UserDto userDto = new UserDto();
+        BeanUtils.copyProperties(user, userDto);
+        return userDto;
     }
 
 }

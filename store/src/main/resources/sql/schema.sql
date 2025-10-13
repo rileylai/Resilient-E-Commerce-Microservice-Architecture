@@ -8,7 +8,6 @@ CREATE TABLE IF NOT EXISTS users (
     UNIQUE KEY `uk_user_name` (`user_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-
 -- orders
 CREATE TABLE IF NOT EXISTS orders (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -21,7 +20,6 @@ CREATE TABLE IF NOT EXISTS orders (
     CONSTRAINT `fk_order_user` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-
 -- order_item
 CREATE TABLE IF NOT EXISTS order_item (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -33,3 +31,39 @@ CREATE TABLE IF NOT EXISTS order_item (
     CONSTRAINT `fk_order_item_order` FOREIGN KEY (`order_id`) REFERENCES `orders`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- products
+CREATE TABLE IF NOT EXISTS products (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `name` VARCHAR(100) NOT NULL,
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- warehouse
+CREATE TABLE IF NOT EXISTS warehouse (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `name` VARCHAR(100) NOT NULL,
+    `location` VARCHAR(100) NOT NULL,
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- warehouse_stock
+CREATE TABLE IF NOT EXISTS warehouse_stock (
+    `warehouse_id` BIGINT UNSIGNED NOT NULL,
+    `product_id` BIGINT UNSIGNED NOT NULL,
+    `quantity` INT NOT NULL,
+    PRIMARY KEY (`warehouse_id`, `product_id`),
+    FOREIGN KEY (`warehouse_id`) REFERENCES `warehouse`(`id`),
+    FOREIGN KEY (`product_id`) REFERENCES `products`(`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- order_warehouse
+CREATE TABLE IF NOT EXISTS order_warehouse (
+    `order_id` BIGINT UNSIGNED NOT NULL,
+    `warehouse_id` BIGINT UNSIGNED NOT NULL,
+    `product_id` BIGINT UNSIGNED NOT NULL,
+    `quantity` INT NOT NULL,
+    PRIMARY KEY (`order_id`, `warehouse_id`, `product_id`),
+    FOREIGN KEY (`order_id`) REFERENCES `orders`(`id`),
+    FOREIGN KEY (`warehouse_id`) REFERENCES `warehouse`(`id`),
+    FOREIGN KEY (`product_id`) REFERENCES `products`(`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
