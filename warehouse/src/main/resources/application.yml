@@ -3,10 +3,14 @@ spring:
     name: warehouse-service
 
   datasource:
-    url: jdbc:mysql://localhost:3306/warehouse?useSSL=false&serverTimezone=UTC
+    url: jdbc:mysql://localhost:3306/warehouse?useSSL=false&serverTimezone=Australia/Sydney
     username: warehouse
     password: warehouse_pwd
     driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jackson:
+    time-zone: Australia/Sydney
+    date-format: yyyy-MM-dd HH:mm:ss
 
   sql:
     init:
@@ -20,6 +24,16 @@ spring:
     port: 5672
     username: admin
     password: admin
+    listener:
+      simple:
+        acknowledge-mode: auto
+        prefetch: 10
+        retry:
+          enabled: true
+          initial-interval: 1000
+          max-attempts: 3
+          max-interval: 10000
+          multiplier: 2
 
 server:
   port: 8082
@@ -37,8 +51,8 @@ mybatis-plus:
       update-strategy: not_null
 
 jwt:
-  secret: your-secret-key-change-this-in-production
-  expiration: 86400000
+  secret: tut02group03
+  expire-hours: 24
 
 logging:
   level:

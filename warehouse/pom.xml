@@ -58,6 +58,12 @@
             <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
             <version>3.5.14</version>
         </dependency>
+        <!--Mybatis-plus JSqlParser for pagination-->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-jsqlparser</artifactId>
+            <version>3.5.14</version>
+        </dependency>
         <!--Mysql-driver-->
         <dependency>
             <groupId>com.mysql</groupId>
