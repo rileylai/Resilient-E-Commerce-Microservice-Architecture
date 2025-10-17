@@ -37,6 +37,11 @@ build/
 
 ### Documentation ###
 *.pdf
+IMPLEMENTATION.md
+
+### Postman Collections ###
+*.postman_collection.json
+*.postman_environment.json
 
 ### Logs ###
 logs/

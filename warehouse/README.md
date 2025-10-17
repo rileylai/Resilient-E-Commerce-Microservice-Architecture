@@ -73,6 +73,7 @@ Stores stock levels for products in each warehouse.
 | product_id | BIGINT | Foreign key to Product |
 | available_quantity | INT | Available stock quantity |
 | reserved_quantity | INT | Reserved stock quantity |
+| version | INT | Optimistic lock version number |
 | created_at | TIMESTAMP | Creation timestamp |
 | updated_at | TIMESTAMP | Last update timestamp |
 
@@ -491,7 +492,25 @@ Authorization: Bearer <JWT_TOKEN>
 
 ## Message Queue Integration
 
-The Warehouse Service integrates with RabbitMQ to handle asynchronous events.
+The Warehouse Service integrates with RabbitMQ to handle asynchronous events and inter-service communication.
+
+### Exchange and Queue Configuration
+
+#### Exchanges
+- **warehouse.exchange** (Topic): For publishing warehouse events to other services
+- **delivery.exchange** (Topic): For receiving delivery service events
+- **order.exchange** (Topic): For receiving order service events
+- **warehouse.exchange.dlx** (Direct): Dead letter exchange for failed messages
+
+#### Queues
+- **warehouse.delivery.pickup**: Listens to delivery pickup confirmations
+- **warehouse.order.cancelled**: Listens to order cancellation events
+- **warehouse.exchange.dlq**: Dead letter queue for unprocessable messages
+
+#### Bindings
+- `warehouse.delivery.pickup` ← `delivery.exchange` with routing key `delivery.pickup.confirmed`
+- `warehouse.order.cancelled` ← `order.exchange` with routing key `order.cancelled`
+- `warehouse.exchange.dlq` ← `warehouse.exchange.dlx` with routing key `#`
 
 ### Published Events
 
@@ -593,117 +612,6 @@ The Warehouse Service integrates with RabbitMQ to handle asynchronous events.
 
 **Action**: Automatically releases reserved stock for the cancelled order.
 
-## Setup and Installation
-
-### Prerequisites
-- Java 17 or higher
-- MySQL 8.0 or higher
-- RabbitMQ 3.x
-- Maven 3.6+
-
-### Configuration
-
-Update `application.yml` or `application.properties` with your environment settings:
-
-```yaml
-spring:
-  application:
-    name: warehouse-service
-
-  datasource:
-    url: jdbc:mysql://localhost:3306/warehouse_db?useSSL=false&serverTimezone=UTC
-    username: your_username
-    password: your_password
-    driver-class-name: com.mysql.cj.jdbc.Driver
-
-  rabbitmq:
-    host: localhost
-    port: 5672
-    username: guest
-    password: guest
-
-server:
-  port: 8082
-
-mybatis-plus:
-  mapper-locations: classpath*:/mapper/**/*.xml
-  type-aliases-package: com.tut2.group3.warehouse.entity
-  configuration:
-    map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
-
-jwt:
-  secret: your-secret-key-here
-  expiration: 86400000
-```
-
-### Database Initialization
-
-Run the SQL scripts to create the database schema:
-
-```bash
-mysql -u your_username -p warehouse_db < database/schema.sql
-mysql -u your_username -p warehouse_db < database/data.sql
-```
-
-### Build and Run
-
-```bash
-# Build the project
-mvn clean install
-
-# Run the application
-mvn spring-boot:run
-
-# Or run the JAR file
-java -jar target/warehouse-0.0.1-SNAPSHOT.jar
-```
-
-The service will start on `http://localhost:8082`
-
-## Testing
-
-### Run Unit Tests
-```bash
-mvn test
-```
-
-### Run Integration Tests
-```bash
-mvn verify
-```
-
-### Sample API Requests
-
-#### Check Stock Availability
-```bash
-curl -X POST http://localhost:8082/api/warehouse/check-availability \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "productId": 1,
-    "quantity": 10
-  }'
-```
-
-#### Reserve Stock
-```bash
-curl -X POST http://localhost:8082/api/warehouse/reserve \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "orderId": "ORD-20251012-001",
-    "productId": 1,
-    "quantity": 10,
-    "warehouses": [
-      {
-        "warehouseId": 1,
-        "quantity": 10
-      }
-    ]
-  }'
-```
-
 ## Error Handling
 
 All API endpoints follow a consistent error response format using the `Result<T>` wrapper:
@@ -754,46 +662,86 @@ Logs are written to:
 ## Fault Tolerance and Availability
 
 ### Stock Reservation Mechanism
-- Uses optimistic locking to prevent overselling
-- Reservation timeout: 15 minutes (configurable)
-- Automatic release of expired reservations
+- **Optimistic Locking**: Uses `version` field in inventory table to prevent concurrent modification conflicts
+- **Retry Logic**: Automatic retry up to 3 times with exponential backoff (50ms, 100ms, 150ms)
+- **Reservation States**: RESERVED → CONFIRMED → (ready for pickup)
+- **Automatic Cleanup**: Reserved stock is automatically released when orders are cancelled via MQ events
 
 ### Message Queue Reliability
-- Message acknowledgment enabled
-- Retry mechanism for failed messages
-- Dead letter queue for unprocessable messages
+- **Message Acknowledgment**: Auto acknowledgment mode configured
+- **Retry Mechanism**: Failed messages retry 3 times with exponential backoff (1s → 2s → 4s)
+- **Dead Letter Queue (DLQ)**: Unprocessable messages sent to `warehouse.exchange.dlq`
+- **Prefetch Limit**: 10 messages per consumer to prevent overwhelming the service
+- **Concurrent Consumers**: 3-10 concurrent consumers for parallel processing
 
 ### Database Transactions
-- ACID properties maintained
-- Rollback on failure scenarios
-- Connection pooling for performance
+- **ACID Properties**: All stock operations wrapped in `@Transactional` annotations
+- **Rollback on Failure**: Automatic rollback on exceptions
+- **Connection Pooling**: MyBatis-Plus default connection pool
+- **Constraint Validation**: Database-level CHECK constraints prevent negative stock levels
+
+### Concurrency Control
+- **Optimistic Locking**: Prevents lost updates during concurrent stock modifications
+- **Unique Constraints**: Prevents duplicate inventory records per warehouse-product combination
+- **Version Increment**: Every stock update increments the version field
 
 ## Integration with Other Services
 
-### Store Service
-- Provides stock availability information
-- Handles stock reservations for orders
-- Confirms or releases stock based on payment status
+### Communication Patterns
 
-### Delivery Service
-- Receives pickup confirmation events
-- Updates stock status after pickup
-- Handles multiple warehouse pickups
+The Warehouse Service uses a hybrid communication pattern:
+- **Synchronous (HTTP REST)**: For immediate responses (stock checking, reservation, confirmation)
+- **Asynchronous (RabbitMQ)**: For event notifications and eventual consistency
 
-## Future Enhancements
+### Store Service Integration
 
-- Real-time stock level monitoring dashboard
-- Predictive analytics for stock replenishment
-- Warehouse performance metrics
-- Automated reordering based on stock levels
-- Support for inter-warehouse transfers
+**Store → Warehouse (HTTP)**:
+1. `POST /api/warehouse/check-availability` - Check if stock is available
+2. `POST /api/warehouse/reserve` - Reserve stock for an order
+3. `POST /api/warehouse/confirm` - Confirm reservation after payment success
+4. `POST /api/warehouse/release` - Release stock if payment fails (alternative to MQ)
 
-## Contact and Support
+**Warehouse → Store (RabbitMQ)**:
+- Publishes `warehouse.stock.reserved` when stock is successfully reserved
+- Publishes `warehouse.stock.confirmed` when reservation is confirmed
+- Publishes `warehouse.stock.released` when stock is released
 
-For questions or issues related to the Warehouse Service, please contact the development team or create an issue in the project repository.
+**Store → Warehouse (RabbitMQ)**:
+- Store publishes `order.cancelled` events that warehouse listens to
+- Warehouse automatically releases reserved stock upon receiving cancellation
 
----
+### Delivery Service Integration
 
-**Version**: 1.0.0
-**Last Updated**: October 12, 2025
-**Maintained by**: Tutorial 02 Group 03
+**DeliveryCo → Warehouse (RabbitMQ)**:
+- DeliveryCo publishes `delivery.pickup.confirmed` when goods are picked up
+- Warehouse logs the pickup event for tracking purposes
+
+**Warehouse → DeliveryCo (via Store)**:
+- Warehouse publishes `warehouse.stock.confirmed`
+- Store receives this and requests delivery from DeliveryCo with warehouse locations
+
+### Workflow Example
+
+```
+1. Customer places order
+   └─> Store checks availability: POST /api/warehouse/check-availability
+
+2. Store reserves stock: POST /api/warehouse/reserve
+   └─> Warehouse publishes: warehouse.stock.reserved
+
+3. Store processes payment (Bank service)
+
+4. If payment succeeds:
+   └─> Store confirms: POST /api/warehouse/confirm
+       └─> Warehouse publishes: warehouse.stock.confirmed
+       └─> Store requests delivery from DeliveryCo
+
+5. DeliveryCo picks up goods
+   └─> DeliveryCo publishes: delivery.pickup.confirmed
+       └─> Warehouse logs pickup event
+
+6. If order cancelled (before delivery):
+   └─> Store publishes: order.cancelled
+       └─> Warehouse releases stock automatically
+       └─> Warehouse publishes: warehouse.stock.released
+```
