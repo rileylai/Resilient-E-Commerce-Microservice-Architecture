@@ -1,4 +1,4 @@
-package com.tut2.group3.store.dto;
+package com.tut2.group3.store.dto.user;
 
 import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;

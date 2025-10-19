@@ -1,7 +1,7 @@
 package com.tut2.group3.store.controller;
 
-import com.tut2.group3.store.dto.LoginDto;
-import com.tut2.group3.store.dto.RegisterDto;
+import com.tut2.group3.store.dto.user.LoginDto;
+import com.tut2.group3.store.dto.user.RegisterDto;
 import com.tut2.group3.store.pojo.Result;
 import com.tut2.group3.store.pojo.User;
 import com.tut2.group3.store.service.UserService;

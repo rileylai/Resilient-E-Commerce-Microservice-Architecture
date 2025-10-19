@@ -1,8 +1,8 @@
 package com.tut2.group3.store.service;
 
-import com.tut2.group3.store.dto.LoginDto;
-import com.tut2.group3.store.dto.RegisterDto;
-import com.tut2.group3.store.dto.UserDto;
+import com.tut2.group3.store.dto.user.LoginDto;
+import com.tut2.group3.store.dto.user.RegisterDto;
+import com.tut2.group3.store.dto.user.UserDto;
 import com.tut2.group3.store.pojo.User;
 
 public interface UserService {

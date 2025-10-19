@@ -1,6 +1,6 @@
 package com.tut2.group3.store.controller;
 
-import com.tut2.group3.store.dto.UserDto;
+import com.tut2.group3.store.dto.user.UserDto;
 import com.tut2.group3.store.exception.BusinessException;
 import com.tut2.group3.store.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
