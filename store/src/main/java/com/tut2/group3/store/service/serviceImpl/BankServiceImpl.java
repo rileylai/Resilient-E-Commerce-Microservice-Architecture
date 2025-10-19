@@ -1,7 +1,7 @@
 package com.tut2.group3.store.service.serviceImpl;
 
-import com.tut2.group3.store.dto.bank.PaymentDto;
-import com.tut2.group3.store.dto.bank.PaymentResponseDto;
+import com.tut2.group3.store.dto.bank.BankRequestDto;
+import com.tut2.group3.store.dto.bank.BankResponseDto;
 import com.tut2.group3.store.service.BankService;
 import org.springframework.stereotype.Service;
 
@@ -9,9 +9,12 @@ import org.springframework.stereotype.Service;
 public class BankServiceImpl implements BankService {
 
     @Override
-    public PaymentResponseDto Payment(PaymentDto paymentDto) {
+    public BankResponseDto Payment(BankRequestDto bankRequestDto) {
 
-        PaymentResponseDto paymentResponse = new PaymentResponseDto();
-        return null;
+        BankResponseDto bankResponseDto = new BankResponseDto();
+
+        // send to bank service and get response
+
+        return bankResponseDto;
     }
 }

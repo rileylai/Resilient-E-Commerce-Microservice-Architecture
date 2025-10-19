@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class PaymentDto {
+public class BankRequestDto {
     @NotNull(message = "orderId is required")
     private long orderId;
     @NotNull(message = "customerId is required")

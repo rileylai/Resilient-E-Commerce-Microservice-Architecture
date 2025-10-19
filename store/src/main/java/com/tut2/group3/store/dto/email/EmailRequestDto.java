@@ -8,4 +8,8 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @NoArgsConstructor
 public class EmailRequestDto {
+    public Long userId;
+    public Long orderId;
+    public String emailAddress;
+    public String message;
 }

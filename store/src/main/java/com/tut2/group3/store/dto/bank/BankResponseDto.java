@@ -8,7 +8,7 @@ import lombok.NoArgsConstructor;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class PaymentResponseDto {
+public class BankResponseDto {
     @NotNull(message = "orderId is required")
     private Long orderId;
     @NotNull(message = "customerId is required")

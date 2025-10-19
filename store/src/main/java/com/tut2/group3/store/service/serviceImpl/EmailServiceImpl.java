@@ -9,6 +9,12 @@ import org.springframework.stereotype.Service;
 public class EmailServiceImpl implements EmailService {
     @Override
     public EmailResponseDto sendEmail(EmailRequestDto emailRequestDto) {
-        return null;
+
+        EmailResponseDto emailResponseDto = new EmailResponseDto();
+
+        //send to email service and get response
+
+        return emailResponseDto;
+
     }
 }

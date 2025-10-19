@@ -1,6 +1,6 @@
 package com.tut2.group3.store.dto.order;
 
-import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -14,10 +14,10 @@ import java.util.List;
 public class OrderDto {
 
     private Long id;
-    @NotBlank(message = "User cannot be empty")
+    @NotNull
     private Long userId;
     private String status;
-    private Double totalAmount;
+    private float totalAmount;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 
