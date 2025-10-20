@@ -1,5 +1,6 @@
 package com.tut2.group3.warehouse.controller;
 
+import com.tut2.group3.warehouse.common.ErrorCode;
 import com.tut2.group3.warehouse.common.Result;
 import com.tut2.group3.warehouse.dto.request.*;
 import com.tut2.group3.warehouse.dto.response.*;
@@ -23,6 +24,33 @@ public class WarehouseController {
     private final WarehouseService warehouseService;
 
     /**
+     * Validate order - check if all products in the order can be fulfilled
+     */
+    @PostMapping("/validate-order")
+    public Result<OrderValidationResponse> validateOrder(
+            @Valid @RequestBody OrderValidationRequest request) {
+        try {
+            OrderValidationResponse response = warehouseService.validateOrder(request);
+
+            if (response.getValid()) {
+                return Result.success(response.getMessage(), response);
+            } else {
+                return Result.error(
+                        ErrorCode.INSUFFICIENT_STOCK,
+                        response.getMessage(),
+                        response
+                );
+            }
+        } catch (Exception e) {
+            log.error("Error validating order {}", request.getOrderId(), e);
+            return Result.error(
+                    ErrorCode.INTERNAL_ERROR,
+                    e.getMessage()
+            );
+        }
+    }
+
+    /**
      * Check stock availability
      */
     @PostMapping("/check-availability")
@@ -38,7 +66,7 @@ public class WarehouseController {
                 return Result.success(message, response);
             } else {
                 return Result.error(
-                        com.tut2.group3.warehouse.common.ErrorCode.INSUFFICIENT_STOCK,
+                        ErrorCode.INSUFFICIENT_STOCK,
                         "Insufficient stock available",
                         response
                 );
@@ -46,7 +74,7 @@ public class WarehouseController {
         } catch (Exception e) {
             log.error("Error checking stock availability", e);
             return Result.error(
-                    com.tut2.group3.warehouse.common.ErrorCode.INTERNAL_ERROR,
+                    ErrorCode.INTERNAL_ERROR,
                     e.getMessage()
             );
         }
@@ -64,13 +92,13 @@ public class WarehouseController {
         } catch (RuntimeException e) {
             log.error("Error reserving stock for order {}", request.getOrderId(), e);
             return Result.error(
-                    com.tut2.group3.warehouse.common.ErrorCode.STOCK_RESERVATION_FAILED,
+                    ErrorCode.STOCK_RESERVATION_FAILED,
                     e.getMessage()
             );
         } catch (Exception e) {
             log.error("Unexpected error reserving stock", e);
             return Result.error(
-                    com.tut2.group3.warehouse.common.ErrorCode.INTERNAL_ERROR,
+                    ErrorCode.INTERNAL_ERROR,
                     e.getMessage()
             );
         }
@@ -88,13 +116,13 @@ public class WarehouseController {
         } catch (RuntimeException e) {
             log.error("Error confirming reservation for order {}", request.getOrderId(), e);
             return Result.error(
-                    com.tut2.group3.warehouse.common.ErrorCode.RESERVATION_NOT_FOUND,
+                    ErrorCode.RESERVATION_NOT_FOUND,
                     e.getMessage()
             );
         } catch (Exception e) {
             log.error("Unexpected error confirming reservation", e);
             return Result.error(
-                    com.tut2.group3.warehouse.common.ErrorCode.INTERNAL_ERROR,
+                    ErrorCode.INTERNAL_ERROR,
                     e.getMessage()
             );
         }
@@ -112,13 +140,13 @@ public class WarehouseController {
         } catch (RuntimeException e) {
             log.error("Error releasing stock for order {}", request.getOrderId(), e);
             return Result.error(
-                    com.tut2.group3.warehouse.common.ErrorCode.RESERVATION_NOT_FOUND,
+                    ErrorCode.RESERVATION_NOT_FOUND,
                     e.getMessage()
             );
         } catch (Exception e) {
             log.error("Unexpected error releasing stock", e);
             return Result.error(
-                    com.tut2.group3.warehouse.common.ErrorCode.INTERNAL_ERROR,
+                    ErrorCode.INTERNAL_ERROR,
                     e.getMessage()
             );
         }
@@ -140,13 +168,13 @@ public class WarehouseController {
         } catch (RuntimeException e) {
             log.error("Error getting warehouse stock", e);
             return Result.error(
-                    com.tut2.group3.warehouse.common.ErrorCode.WAREHOUSE_NOT_FOUND,
+                    ErrorCode.WAREHOUSE_NOT_FOUND,
                     e.getMessage()
             );
         } catch (Exception e) {
             log.error("Unexpected error getting warehouse stock", e);
             return Result.error(
-                    com.tut2.group3.warehouse.common.ErrorCode.INTERNAL_ERROR,
+                    ErrorCode.INTERNAL_ERROR,
                     e.getMessage()
             );
         }
@@ -164,13 +192,13 @@ public class WarehouseController {
         } catch (RuntimeException e) {
             log.error("Error updating stock", e);
             return Result.error(
-                    com.tut2.group3.warehouse.common.ErrorCode.STOCK_UPDATE_FAILED,
+                    ErrorCode.STOCK_UPDATE_FAILED,
                     e.getMessage()
             );
         } catch (Exception e) {
             log.error("Unexpected error updating stock", e);
             return Result.error(
-                    com.tut2.group3.warehouse.common.ErrorCode.INTERNAL_ERROR,
+                    ErrorCode.INTERNAL_ERROR,
                     e.getMessage()
             );
         }
@@ -188,7 +216,7 @@ public class WarehouseController {
         } catch (Exception e) {
             log.error("Error getting warehouses", e);
             return Result.error(
-                    com.tut2.group3.warehouse.common.ErrorCode.INTERNAL_ERROR,
+                    ErrorCode.INTERNAL_ERROR,
                     e.getMessage()
             );
         }
@@ -216,7 +244,7 @@ public class WarehouseController {
                     .messageQueue("UNKNOWN")
                     .build();
             return Result.error(
-                    com.tut2.group3.warehouse.common.ErrorCode.INTERNAL_ERROR,
+                    ErrorCode.INTERNAL_ERROR,
                     "Service health check failed",
                     response
             );
