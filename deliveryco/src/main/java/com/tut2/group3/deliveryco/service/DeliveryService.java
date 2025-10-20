@@ -8,7 +8,6 @@ import java.util.List;
 
 /**
  * Delivery Service Interface
- *
  * Provides core business logic for managing deliveries:
  * - Creating delivery records from requests
  * - Updating delivery status
