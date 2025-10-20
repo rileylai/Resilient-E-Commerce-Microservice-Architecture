@@ -1,23 +1,27 @@
 package com.tut2.group3.store.dto.bank;
 
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.math.BigDecimal;
 
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
 public class BankRequestDto {
-    @NotNull(message = "orderId is required")
-    private long orderId;
-    @NotNull(message = "customerId is required")
-    private long customerId;
-    @Positive(message = "amount must be positive")
-    private double amount;
-    private LocalDateTime createPaymentDate;
+    @NotBlank
+    private String orderId;
+
+    @NotBlank
+    private String userId;
+
+    @NotNull
+    private BigDecimal amount;
+
+    @NotBlank
+    private String currency;
 
 }

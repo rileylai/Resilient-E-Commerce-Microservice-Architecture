@@ -1,12 +1,11 @@
 package com.tut2.group3.store.service;
 
-import com.tut2.group3.store.dto.order.OrderDto;
-
-import java.util.List;
+import com.tut2.group3.store.dto.order.OrderCreateRequestDTO;
+import com.tut2.group3.store.pojo.Result;
+import org.springframework.web.bind.annotation.RequestBody;
 
 public interface OrderService {
+    Result orderPlace(@RequestBody OrderCreateRequestDTO orderCreateRequestDTO);
 
-    void createOrder(OrderDto orderDto);
-
-    List<OrderDto> showOrders(Long userId);
+    Result payOrder(Long orderID, Long userID, float amount, String currency);
 }

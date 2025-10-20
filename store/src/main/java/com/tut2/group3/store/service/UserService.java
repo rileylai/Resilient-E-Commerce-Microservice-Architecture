@@ -7,8 +7,6 @@ import com.tut2.group3.store.pojo.User;
 
 public interface UserService {
 
-
-
     void register(RegisterDto registerDto);
 
     User login(LoginDto loginDto);

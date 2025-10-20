@@ -1,6 +1,5 @@
 package com.tut2.group3.store.dto.order;
 
-import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -10,8 +9,8 @@ import java.util.List;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class CreateOrderDto {
-    @NotNull
+public class OrderCreateRequestDTO {
+
     private Long userId;
-    private List<OrderItemDto>  orderItemDto;
+    private List<OrderItemRequestDTO> items;
 }
