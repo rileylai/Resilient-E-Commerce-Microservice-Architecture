@@ -1,9 +1,6 @@
 package com.tut2.group3.deliveryco.entity;
 
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableField;
-import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.*;
 import com.tut2.group3.deliveryco.entity.enums.DeliveryStatus;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -53,13 +50,15 @@ public class Delivery {
 
     /**
      * Timestamp when the delivery record was created
+     * Auto-filled by MyBatis-Plus on insert
      */
-    @TableField("created_at")
+    @TableField(value = "created_at", fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 
     /**
      * Timestamp when the delivery record was last updated
+     * Auto-filled by MyBatis-Plus on insert and update
      */
-    @TableField("updated_at")
+    @TableField(value = "updated_at", fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 }

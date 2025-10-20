@@ -1,32 +1,48 @@
 package com.tut2.group3.deliveryco.entity;
 
+import com.tut2.group3.deliveryco.common.ErrorCode;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-//
+/**
+ * Result Response Wrapper
+ *
+ * Standardized API response format.
+ */
 @AllArgsConstructor
 @NoArgsConstructor
-
 @Data
 public class Result<T> {
-    private int code;   //status code, 200=success; 400=parameter wrong; 500=server error
+    private int code;
     private String message;
     private T data;
 
-    //  success: without data
     public static <T> Result<T> success() {
-        return new Result<T>(200, "success", null);
+        return new Result<>(200, "Success", null);
     }
 
-    //success: with data
     public static <T> Result<T> success(T data) {
-        return new Result<T>(200, "success", data);
+        return new Result<>(200, "Success", data);
     }
 
-    //error
+    public static <T> Result<T> success(String message, T data) {
+        return new Result<>(200, message, data);
+    }
+
+    public static <T> Result<T> error(ErrorCode errorCode) {
+        return new Result<>(errorCode.getCode(), errorCode.getMessage(), null);
+    }
+
+    public static <T> Result<T> error(ErrorCode errorCode, String customMessage) {
+        return new Result<>(errorCode.getCode(), customMessage, null);
+    }
+
+    public static <T> Result<T> error(ErrorCode errorCode, String customMessage, T data) {
+        return new Result<>(errorCode.getCode(), customMessage, data);
+    }
+
     public static <T> Result<T> error(int code, String message) {
-        return new Result<T>(code, message, null);
+        return new Result<>(code, message, null);
     }
-
 }
