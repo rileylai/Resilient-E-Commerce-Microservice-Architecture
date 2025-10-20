@@ -93,7 +93,129 @@ Tracks stock reservations for orders.
 
 ## API Endpoints
 
-### 1. Check Stock Availability
+### 1. Validate Order
+
+**Endpoint**: `POST /api/warehouse/validate-order`
+
+**Description**: Validate whether all products in an order can be fulfilled by checking stock availability across all warehouses. This endpoint is useful for validating entire orders before proceeding with reservation.
+
+**Request Headers**:
+```
+Authorization: Bearer <JWT_TOKEN>
+Content-Type: application/json
+```
+
+**Request Body**:
+```json
+{
+  "orderId": "123",
+  "items": [
+    {
+      "productId": 1001,
+      "quantity": 2
+    },
+    {
+      "productId": 1002,
+      "quantity": 1
+    }
+  ]
+}
+```
+
+**Success Response** (200 OK):
+```json
+{
+  "code": 200,
+  "message": "All products are available",
+  "data": {
+    "orderId": "123",
+    "valid": true,
+    "validationCode": "SUCCESS",
+    "message": "All products are available",
+    "productResults": [
+      {
+        "productId": 1001,
+        "productName": "Laptop",
+        "requestedQuantity": 2,
+        "availableQuantity": 15,
+        "available": true,
+        "reason": null
+      },
+      {
+        "productId": 1002,
+        "productName": "Mouse",
+        "requestedQuantity": 1,
+        "availableQuantity": 50,
+        "available": true,
+        "reason": null
+      }
+    ]
+  }
+}
+```
+
+**Error Response - Insufficient Stock** (400 Bad Request):
+```json
+{
+  "code": 601,
+  "message": "Insufficient stock for one or more products",
+  "data": {
+    "orderId": "123",
+    "valid": false,
+    "validationCode": "INSUFFICIENT_STOCK",
+    "message": "Insufficient stock for one or more products",
+    "productResults": [
+      {
+        "productId": 1001,
+        "productName": "Laptop",
+        "requestedQuantity": 100,
+        "availableQuantity": 15,
+        "available": false,
+        "reason": "Insufficient stock"
+      },
+      {
+        "productId": 1002,
+        "productName": "Mouse",
+        "requestedQuantity": 1,
+        "availableQuantity": 50,
+        "available": true,
+        "reason": null
+      }
+    ]
+  }
+}
+```
+
+**Error Response - Product Not Found** (400 Bad Request):
+```json
+{
+  "code": 601,
+  "message": "One or more products not found",
+  "data": {
+    "orderId": "123",
+    "valid": false,
+    "validationCode": "PRODUCT_NOT_FOUND",
+    "message": "One or more products not found",
+    "productResults": [
+      {
+        "productId": 9999,
+        "productName": "Unknown",
+        "requestedQuantity": 1,
+        "availableQuantity": 0,
+        "available": false,
+        "reason": "Product not found"
+      }
+    ]
+  }
+}
+```
+
+**Validation Codes**:
+- `SUCCESS`: All products are available in requested quantities
+- `INSUFFICIENT_STOCK`: One or more products have insufficient stock
+- `PRODUCT_NOT_FOUND`: One or more products do not exist in the system
+
+### 2. Check Stock Availability
 
 **Endpoint**: `POST /api/warehouse/check-availability`
 
@@ -181,7 +303,7 @@ Content-Type: application/json
 }
 ```
 
-### 2. Reserve Stock
+### 3. Reserve Stock
 
 **Endpoint**: `POST /api/warehouse/reserve`
 
@@ -242,7 +364,7 @@ Content-Type: application/json
 }
 ```
 
-### 3. Confirm Stock Reservation
+### 4. Confirm Stock Reservation
 
 **Endpoint**: `POST /api/warehouse/confirm`
 
@@ -296,7 +418,7 @@ Content-Type: application/json
 }
 ```
 
-### 4. Release Stock
+### 5. Release Stock
 
 **Endpoint**: `POST /api/warehouse/release`
 
@@ -338,7 +460,7 @@ Content-Type: application/json
 }
 ```
 
-### 5. Get Warehouse Stock
+### 6. Get Warehouse Stock
 
 **Endpoint**: `GET /api/warehouse/{warehouseId}/stock`
 
@@ -391,7 +513,7 @@ Authorization: Bearer <JWT_TOKEN>
 }
 ```
 
-### 6. Update Stock Level
+### 7. Update Stock Level
 
 **Endpoint**: `PUT /api/warehouse/stock`
 
@@ -434,7 +556,7 @@ Content-Type: application/json
 }
 ```
 
-### 7. Get All Warehouses
+### 8. Get All Warehouses
 
 **Endpoint**: `GET /api/warehouse/list`
 
@@ -470,7 +592,7 @@ Authorization: Bearer <JWT_TOKEN>
 }
 ```
 
-### 8. Health Check
+### 9. Health Check
 
 **Endpoint**: `GET /api/warehouse/health`
 
@@ -487,6 +609,136 @@ Authorization: Bearer <JWT_TOKEN>
     "database": "CONNECTED",
     "messageQueue": "CONNECTED"
   }
+}
+```
+
+### 10. Get All Products
+
+**Endpoint**: `GET /api/products`
+
+**Description**: Retrieve a list of all products with their complete information.
+
+**Request Headers**:
+```
+Authorization: Bearer <JWT_TOKEN>
+```
+
+**Success Response** (200 OK):
+```json
+{
+  "code": 200,
+  "message": "Found 3 product(s)",
+  "data": [
+    {
+      "id": 1,
+      "name": "Laptop",
+      "description": "High-performance laptop",
+      "price": 1299.99,
+      "createdAt": "2025-01-01T10:00:00",
+      "updatedAt": "2025-01-01T10:00:00"
+    },
+    {
+      "id": 2,
+      "name": "Mouse",
+      "description": "Wireless mouse",
+      "price": 29.99,
+      "createdAt": "2025-01-01T10:05:00",
+      "updatedAt": "2025-01-01T10:05:00"
+    },
+    {
+      "id": 3,
+      "name": "Keyboard",
+      "description": "Mechanical keyboard",
+      "price": 89.99,
+      "createdAt": "2025-01-01T10:10:00",
+      "updatedAt": "2025-01-01T10:10:00"
+    }
+  ]
+}
+```
+
+**Success Response - Empty** (200 OK):
+```json
+{
+  "code": 200,
+  "message": "No products available",
+  "data": []
+}
+```
+
+### 11. Get Product Price
+
+**Endpoint**: `GET /api/products/price`
+
+**Description**: Query product price by ID or name. Only one parameter should be provided.
+
+**Request Headers**:
+```
+Authorization: Bearer <JWT_TOKEN>
+```
+
+**Query Parameters**:
+- `id` (Long, optional): Product ID
+- `name` (String, optional): Product name (exact match)
+
+**Note**: Either `id` or `name` must be provided, but not both.
+
+**Success Response - Query by ID** (200 OK):
+```
+GET /api/products/price?id=1
+```
+```json
+{
+  "code": 200,
+  "message": "Product price retrieved",
+  "data": {
+    "id": 1,
+    "name": "Laptop",
+    "price": 1299.99
+  }
+}
+```
+
+**Success Response - Query by Name** (200 OK):
+```
+GET /api/products/price?name=Mouse
+```
+```json
+{
+  "code": 200,
+  "message": "Product price retrieved",
+  "data": {
+    "id": 2,
+    "name": "Mouse",
+    "price": 29.99
+  }
+}
+```
+
+**Error Response - Missing Parameter** (400 Bad Request):
+```json
+{
+  "code": 400,
+  "message": "Either id or name parameter is required",
+  "data": null
+}
+```
+
+**Error Response - Both Parameters Provided** (400 Bad Request):
+```json
+{
+  "code": 400,
+  "message": "Please provide only one parameter: either id or name",
+  "data": null
+}
+```
+
+**Error Response - Product Not Found** (605):
+```json
+{
+  "code": 605,
+  "message": "Product not found with id: 999",
+  "data": null
 }
 ```
 
