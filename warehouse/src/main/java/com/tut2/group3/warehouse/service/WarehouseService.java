@@ -516,6 +516,75 @@ public class WarehouseService {
                 .toList();
     }
 
+    /**
+     * Validate order - check if all products in the order can be fulfilled
+     */
+    public OrderValidationResponse validateOrder(OrderValidationRequest request) {
+        log.info("Validating order {} with {} items", request.getOrderId(), request.getItems().size());
+
+        List<OrderValidationResponse.ProductValidationResult> productResults = new ArrayList<>();
+        boolean allProductsAvailable = true;
+        String validationCode = "SUCCESS";
+        String message = "All products are available";
+
+        for (OrderValidationRequest.OrderItem item : request.getItems()) {
+            // Verify product exists
+            Product product = productMapper.selectById(item.getProductId());
+
+            if (product == null) {
+                productResults.add(OrderValidationResponse.ProductValidationResult.builder()
+                        .productId(item.getProductId())
+                        .productName("Unknown")
+                        .requestedQuantity(item.getQuantity())
+                        .availableQuantity(0)
+                        .available(false)
+                        .reason("Product not found")
+                        .build());
+                allProductsAvailable = false;
+                validationCode = "PRODUCT_NOT_FOUND";
+                message = "One or more products not found";
+                continue;
+            }
+
+            // Check stock availability across all warehouses
+            LambdaQueryWrapper<Inventory> queryWrapper = new LambdaQueryWrapper<>();
+            queryWrapper.eq(Inventory::getProductId, item.getProductId())
+                       .gt(Inventory::getAvailableQuantity, 0);
+
+            List<Inventory> inventories = inventoryMapper.selectList(queryWrapper);
+
+            // Calculate total available quantity
+            int totalAvailable = inventories.stream()
+                    .mapToInt(Inventory::getAvailableQuantity)
+                    .sum();
+
+            boolean productAvailable = totalAvailable >= item.getQuantity();
+
+            if (!productAvailable) {
+                allProductsAvailable = false;
+                validationCode = "INSUFFICIENT_STOCK";
+                message = "Insufficient stock for one or more products";
+            }
+
+            productResults.add(OrderValidationResponse.ProductValidationResult.builder()
+                    .productId(item.getProductId())
+                    .productName(product.getName())
+                    .requestedQuantity(item.getQuantity())
+                    .availableQuantity(totalAvailable)
+                    .available(productAvailable)
+                    .reason(productAvailable ? null : "Insufficient stock")
+                    .build());
+        }
+
+        return OrderValidationResponse.builder()
+                .orderId(request.getOrderId())
+                .valid(allProductsAvailable)
+                .validationCode(validationCode)
+                .message(message)
+                .productResults(productResults)
+                .build();
+    }
+
     // Event publishing methods
     private void publishStockReservedEvent(String orderId, String reservationId, Long productId,
                                           int quantity, List<WarehouseAllocation> warehouses) {
