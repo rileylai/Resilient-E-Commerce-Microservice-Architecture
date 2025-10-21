@@ -27,3 +27,16 @@ jwt:
   expire-hours: 24
 server:
   port: 8080
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+    try-it-out-enabled: true
+  info:
+    title: My Order Service API
+    version: '1.0'
+    description: API for order placement and management
