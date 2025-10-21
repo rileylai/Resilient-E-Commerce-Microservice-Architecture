@@ -35,6 +35,12 @@ public class Delivery {
     private Long customerId;
 
     /**
+     * Customer email for sending notifications
+     */
+    @TableField("customer_email")
+    private String customerEmail;
+
+    /**
      * Comma-separated list of warehouse IDs where items are located
      * Example: "1,3" means items are in warehouses 1 and 3
      */
