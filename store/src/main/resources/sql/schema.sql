@@ -14,11 +14,15 @@ CREATE TABLE IF NOT EXISTS orders (
     `user_id` BIGINT UNSIGNED NOT NULL,
     `status` VARCHAR(30) NOT NULL,
     `total_amount` DECIMAL(10,2) NOT NULL,
+    `reservation_id` VARCHAR(255),
+    `transaction_id` VARCHAR(255),
     `create_time` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     `update_time` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    CONSTRAINT `fk_order_user` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    CONSTRAINT `fk_order_user` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`),
+    INDEX `idx_orders_user_id` (`user_id`),
+    INDEX `idx_orders_status` (`status`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- order_item
 CREATE TABLE IF NOT EXISTS order_item (

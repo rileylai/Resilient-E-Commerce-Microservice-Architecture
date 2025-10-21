@@ -13,13 +13,17 @@ public class Result<T> {
     private String message;
     private T data;
 
-    //success with message
+    //success with data
     public static <T> Result<T> success(T data) {
         return new Result<>(200, "success", data);
     }
     //success without data
     public static Result success() {
         return new Result<>(200, "success", null);
+    }
+    //success with custom message and data
+    public static <T> Result<T> success(String message, T data) {
+        return new Result<>(200, message, data);
     }
     //business error
     public static <T> Result<T> error(Integer code, String message) {

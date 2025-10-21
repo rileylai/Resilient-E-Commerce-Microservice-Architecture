@@ -16,11 +16,13 @@ import java.time.LocalDateTime;
 public class Order {
 
     @TableId(type = IdType.AUTO)
-    private long id;
+    private Long id;
 
-    private long userId;
-    private String status;
+    private Long userId;
+    private String status; // PENDING_VALIDATION, PENDING_PAYMENT, PAYMENT_SUCCESSFUL, DELIVERY_REQUESTED, COMPLETED, CANCELLED, FAILED
     private float totalAmount;
+    private String reservationId; // Warehouse reservation ID
+    private String transactionId; // Bank transaction ID
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 

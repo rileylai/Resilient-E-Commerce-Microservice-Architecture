@@ -14,10 +14,10 @@ import lombok.NoArgsConstructor;
 public class OrderItem {
 
     @TableId(type = IdType.AUTO)
-    private long id;
+    private Long id;
 
-    private long orderId;
-    private long productId;
+    private Long orderId;
+    private Long productId;
     private int quantity;
     private float price;
 
