@@ -10,6 +10,7 @@ import com.tut2.group3.deliveryco.service.DeliveryService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,7 +24,7 @@ import java.util.stream.Collectors;
  * Delivery Service Implementation
  *
  * Handles delivery creation, status updates, and notifications.
- * Simulates 5% package loss rate.
+ * Simulates package loss based on configurable loss rate.
  */
 @Slf4j
 @Service
@@ -35,8 +36,15 @@ public class DeliveryServiceImpl implements DeliveryService {
     @Autowired
     private RabbitTemplate rabbitTemplate;
 
+    /**
+     * Package loss rate percentage (0-100)
+     * Configurable via application.properties: delivery.package-loss-rate
+     * Default: 5% as per assignment requirements
+     */
+    @Value("${delivery.package-loss-rate:5}")
+    private int packageLossRate;
+
     private static final Random random = new Random();
-    private static final int PACKAGE_LOSS_RATE = 5; // 5% loss rate
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     @Override
@@ -52,6 +60,7 @@ public class DeliveryServiceImpl implements DeliveryService {
         Delivery delivery = new Delivery();
         delivery.setOrderId(request.getOrderId());
         delivery.setCustomerId(request.getCustomerId());
+        delivery.setCustomerEmail(request.getCustomerEmail());
 
         // Convert warehouse IDs list to comma-separated string
         String warehouseIds = request.getWarehouseIds().stream()
@@ -113,9 +122,9 @@ public class DeliveryServiceImpl implements DeliveryService {
                 delivery.getOrderId(),
                 newStatus);
 
-        // Send notification (customer email will be retrieved from the original request or stored)
+        // Send notification with customer email from delivery record
         String message = generateStatusMessage(newStatus);
-        sendStatusUpdateNotification(delivery, null, message);
+        sendStatusUpdateNotification(delivery, delivery.getCustomerEmail(), message);
 
         return delivery;
     }
@@ -181,10 +190,10 @@ public class DeliveryServiceImpl implements DeliveryService {
                 return DeliveryStatus.IN_TRANSIT;
 
             case IN_TRANSIT:
-                // Simulate 5% package loss
+                // Simulate package loss based on configured rate
                 int randomValue = random.nextInt(100);
-                if (randomValue < PACKAGE_LOSS_RATE) {
-                    log.warn("[{}] Package loss simulated ({}% chance)", getCurrentTimestamp(), PACKAGE_LOSS_RATE);
+                if (randomValue < packageLossRate) {
+                    log.warn("[{}] Package loss simulated ({}% chance)", getCurrentTimestamp(), packageLossRate);
                     return DeliveryStatus.LOST;
                 } else {
                     return DeliveryStatus.DELIVERED;
