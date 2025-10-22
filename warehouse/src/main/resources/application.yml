@@ -51,7 +51,7 @@ mybatis-plus:
       update-strategy: not_null
 
 jwt:
-  secret: tut02group03
+  secret: jD8nFz7eA9hQ2LmBt4KxVwR1zTYuE3gH
   expire-hours: 24
 
 logging:
