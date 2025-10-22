@@ -22,25 +22,30 @@ public class LoginInterceptor implements HandlerInterceptor {
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
         String authHeader = request.getHeader("Authorization");
 
-        if(authHeader == null || authHeader.trim().isEmpty()){
+        if (authHeader == null || authHeader.trim().isEmpty()) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             return false;
         }
 
-        String token = authHeader.trim();
+        if (!authHeader.startsWith("Bearer ")) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return false;
+        }
+
+        String token = authHeader.substring(7);
 
         var jwt = jwtUtil.safeParseToken(token);
-        if(jwt == null){
+        if (jwt == null) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             return false;
         }
+
         ThreadLocalUtil.set(jwt.getClaims());
         return true;
     }
 
     @Override
-    public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) throws Exception {
-        // Clear Thread
+    public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) {
         ThreadLocalUtil.remove();
     }
 

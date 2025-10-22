@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-@FeignClient(name = "warehouse", url = "http://localhost:8081")
+@FeignClient(name = "warehouse", url = "http://localhost:8082")
 public interface WarehouseClient {
 
     // ============= Product Management Endpoints =============
