@@ -11,8 +11,6 @@ import java.util.List;
 @FeignClient(name = "warehouse", url = "http://localhost:8082")
 public interface WarehouseClient {
 
-    // ============= Product Management Endpoints =============
-
     /**
      * Get all products
      */
@@ -25,8 +23,6 @@ public interface WarehouseClient {
     @GetMapping("/api/products/price")
     Result<ProductPriceResponse> getProductPrice(@RequestParam(required = false) Long id,
                                                   @RequestParam(required = false) String name);
-
-    // ============= Warehouse Management Endpoints =============
 
     /**
      * Validate order - check if all products in the order can be fulfilled

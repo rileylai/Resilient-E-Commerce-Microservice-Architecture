@@ -7,14 +7,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
-/**
- * Order Controller
- * 
- * REST API endpoints for order management:
- * - Place new orders
- * - Cancel orders
- * - Get order details
- */
 @Slf4j
 @RestController
 @RequestMapping("/order")
