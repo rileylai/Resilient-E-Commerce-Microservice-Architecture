@@ -7,6 +7,7 @@ public enum ErrorCode {
     SUCCESS(200, "Success"),
     BAD_REQUEST(400, "Bad request"),
     UNAUTHORIZED(401, "Unauthorized"),
+    FORBIDDEN(403, "Forbidden"),
     NOT_FOUND(404, "Not found"),
     INTERNAL_ERROR(500, "Internal server error"),
     DEBIT_FAILED(510, "Debit failed"),

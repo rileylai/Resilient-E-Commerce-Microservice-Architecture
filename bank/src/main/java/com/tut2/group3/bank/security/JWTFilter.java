@@ -4,9 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tut2.group3.bank.common.ErrorCode;
 import com.tut2.group3.bank.common.Result;
 import com.tut2.group3.bank.config.JwtConfig;
-import com.tut2.group3.bank.utils.JWTUtil;
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.JwtException;
+import com.tut2.group3.bank.exception.InvalidJwtTokenException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -40,7 +38,7 @@ public class JWTFilter extends OncePerRequestFilter {
             new AntPathRequestMatcher("/api/bank/refund")
     );
 
-    private final JWTUtil jwtUtil;
+    private final JwtTokenUtil jwtTokenUtil;
     private final ObjectMapper objectMapper;
     private final JwtConfig jwtConfig;
 
@@ -53,52 +51,48 @@ public class JWTFilter extends OncePerRequestFilter {
         // debug only !!!
         log.debug("[DEBUG] Authorization Header = {}", authorizationHeader);
 
-        if (!StringUtils.hasText(authorizationHeader) || !authorizationHeader.startsWith(BEARER_PREFIX)) {
+        String token = extractBearerToken(authorizationHeader);
+        if (!StringUtils.hasText(token)) {
             log.debug("JWT missing Authorization header for {} {}", request.getMethod(), request.getRequestURI());
             writeUnauthorized(response);
             return;
         }
 
-        String token = authorizationHeader.substring(BEARER_PREFIX.length()).trim();
-        // debug only !!!
-        log.debug("[DEBUG] JWT token extracted = {}", token);
-        
-        if (!StringUtils.hasText(token)) {
-            log.debug("JWT token blank after Bearer prefix for {} {}", request.getMethod(), request.getRequestURI());
-            writeUnauthorized(response);
-            return;
-        }
-
         try {
-            Claims claims = jwtUtil.parseToken(token);
-            String service = claims.getSubject();
-            // debug only !!!
-            log.debug("[DEBUG] JWT subject (caller) = {}", service);
-            
-            if (!StringUtils.hasText(service)) {
-                log.warn("JWT subject missing for {} {}", request.getMethod(), request.getRequestURI());
-                writeUnauthorized(response);
+            String subject = jwtTokenUtil.extractSubject(token);
+            String role = jwtTokenUtil.extractClaim(token, "role");
+
+            // Set authentication in SecurityContext, so that downstream can use it, e.g., in controllers
+            List<SimpleGrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role));
+            UsernamePasswordAuthenticationToken authToken =
+                new UsernamePasswordAuthenticationToken(subject, null, authorities);
+            SecurityContextHolder.getContext().setAuthentication(authToken);
+
+            // debug
+            log.debug("[DEBUG] JWT subject (caller) = {}", subject);
+            log.debug("[DEBUG] JWT role = {}", role);
+
+            // only "store" role is allowed to access the protected endpoints
+            if (!"store".equals(role)) {
+                log.warn("Forbidden: JWT role={} is not allowed to access {}", role, request.getRequestURI());
+                writeForbidden(response);
                 return;
             }
 
-            // for simplicity, we assign a fixed role. In real scenarios, roles/authorities can be extracted from claims.
-            // allow access to /api/bank/** endpoints to all services with valid JWT
-            UsernamePasswordAuthenticationToken authentication =
-                    new UsernamePasswordAuthenticationToken(
-                            service,
-                            null,
-                            List.of(new SimpleGrantedAuthority("ROLE_SERVICE")) // 可根據需求自訂角色
-                    );
-            SecurityContextHolder.getContext().setAuthentication(authentication);
-
-            request.setAttribute("caller", service);
-            log.info("Authenticated service={} for {} {}", service, request.getMethod(), request.getRequestURI());
-
+            log.info("Validated JWT subject={} with role={} for {} {}", subject, role, request.getMethod(), request.getRequestURI());
             filterChain.doFilter(request, response);
-        } catch (JwtException | IllegalArgumentException ex) {
-            log.warn("JWT validation failed for {} {}: {}", request.getMethod(), request.getRequestURI(), ex.getMessage());
+        } catch (InvalidJwtTokenException ex) {
+            log.warn("Invalid JWT for request to {}: {}", request.getRequestURI(), ex.getMessage());
             writeUnauthorized(response);
         }
+    }
+
+    private void writeForbidden(HttpServletResponse response) throws IOException {
+        response.setStatus(HttpStatus.FORBIDDEN.value());
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        Result<Void> body = Result.error(ErrorCode.FORBIDDEN);
+        response.getWriter().write(objectMapper.writeValueAsString(body));
     }
 
     @Override
@@ -112,5 +106,13 @@ public class JWTFilter extends OncePerRequestFilter {
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         Result<Void> body = Result.error(ErrorCode.UNAUTHORIZED);
         response.getWriter().write(objectMapper.writeValueAsString(body));
+    }
+
+    private String extractBearerToken(String authorizationHeader) {
+        if (!StringUtils.hasText(authorizationHeader) || !authorizationHeader.startsWith(BEARER_PREFIX)) {
+            return null;
+        }
+        String token = authorizationHeader.substring(BEARER_PREFIX.length()).trim();
+        return StringUtils.hasText(token) ? token : null;
     }
 }

@@ -46,4 +46,7 @@ public class Transaction {
 
     @TableField("created_at")
     private LocalDateTime createdAt;
+
+    @TableField("idempotency_key")
+    private String idempotencyKey;
 }

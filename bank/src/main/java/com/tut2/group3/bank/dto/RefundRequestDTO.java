@@ -16,9 +16,15 @@ public class RefundRequestDTO {
     @NotBlank
     private String orderId;
 
+    @NotBlank
+    private String userId;
+
     @NotNull
     private BigDecimal amount;
 
     @NotBlank
     private String currency;
+
+    @NotBlank
+    private String idempotencyKey;
 }
