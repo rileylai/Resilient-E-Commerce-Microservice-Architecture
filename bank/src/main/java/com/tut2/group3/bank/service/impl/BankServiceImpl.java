@@ -10,7 +10,7 @@ import com.tut2.group3.bank.entity.Transaction;
 import com.tut2.group3.bank.entity.enums.TransactionStatus;
 import com.tut2.group3.bank.entity.enums.TransactionType;
 import com.tut2.group3.bank.producer.BankEventPublisher;
-import com.tut2.group3.bank.repository.AccountRepository;
+import com.tut2.group3.bank.mapper.AccountMapper;
 import com.tut2.group3.bank.repository.TransactionRepository;
 import com.tut2.group3.bank.service.BankService;
 import lombok.RequiredArgsConstructor;
@@ -28,7 +28,7 @@ import java.util.concurrent.ThreadLocalRandom;
 public class BankServiceImpl implements BankService {
 
     private final TransactionRepository transactionRepository;
-    private final AccountRepository accountRepository;
+    private final AccountMapper accountMapper;
     private final ModelMapper modelMapper;
     private final BankEventPublisher bankEventPublisher;
 
@@ -37,9 +37,7 @@ public class BankServiceImpl implements BankService {
     public Result<Transaction> processDebit(DebitRequestDTO dto) {
         log.info("Received debit request for orderId={}, userId={}, amount={} {}", dto.getOrderId(), dto.getUserId(), dto.getAmount(), dto.getCurrency());
 
-        Account account = accountRepository.selectOne(new LambdaQueryWrapper<Account>()
-                .eq(Account::getUserId, dto.getUserId())
-                .last("limit 1"));
+        Account account = accountMapper.selectByUserId(dto.getUserId());
 
         Transaction transaction = createTransaction(dto, TransactionType.DEBIT, "TX");
 
@@ -63,11 +61,11 @@ public class BankServiceImpl implements BankService {
         }
 
         // Simulates a random chance of success or failure
-        // If the number is less than 0.5, we consider the transaction a success
-        boolean success = ThreadLocalRandom.current().nextDouble() < 0.5;
+        // If the number is less than 0.5, we consider the transaction a success (now set to 1, all succeed)
+        boolean success = ThreadLocalRandom.current().nextDouble() < 1;
         if (success) {
             account.setBalance(account.getBalance().subtract(dto.getAmount()));
-            accountRepository.updateById(account);
+            accountMapper.updateAccount(account);
 
             transaction.setStatus(TransactionStatus.SUCCEEDED);
             transaction.setMessage("Debit succeeded");
@@ -117,9 +115,7 @@ public class BankServiceImpl implements BankService {
             return Result.error(ErrorCode.REFUND_FAILED, "Currency mismatch for refund");
         }
 
-        Account account = accountRepository.selectOne(new LambdaQueryWrapper<Account>()
-                .eq(Account::getUserId, original.getUserId())
-                .last("limit 1"));
+        Account account = accountMapper.selectByUserId(original.getUserId());
 
         // Validate account existence
         if (account == null) {
@@ -134,11 +130,11 @@ public class BankServiceImpl implements BankService {
         log.info("Persisted refund transaction id={} with bankTxId={}", refund.getId(), refund.getBankTxId());
 
         // Simulates a random chance of success or failure
-        // If the number is less than 0.5, we consider the transaction a success
-        boolean success = ThreadLocalRandom.current().nextDouble() < 0.5;
+        // If the number is less than 0.5, we consider the transaction a success (now set to 1, all succeed)
+        boolean success = ThreadLocalRandom.current().nextDouble() < 1;
         if (success) {
             account.setBalance(account.getBalance().add(dto.getAmount()));
-            accountRepository.updateById(account);
+            accountMapper.updateAccount(account);
 
             refund.setStatus(TransactionStatus.SUCCEEDED);
             refund.setMessage("Refund succeeded");

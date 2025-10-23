@@ -1,14 +1,11 @@
 package com.tut2.group3.bank;
 
 import org.mybatis.spring.annotation.MapperScan;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-import jakarta.annotation.PostConstruct;
-
 @SpringBootApplication
-@MapperScan("com.tut2.group3.bank.repository")
+@MapperScan("com.tut2.group3.bank.mapper")
 public class BankApplication {
 
     // // test

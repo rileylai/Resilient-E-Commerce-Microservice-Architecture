@@ -1,13 +1,12 @@
 package com.tut2.group3.bank.service.impl;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.tut2.group3.bank.common.ErrorCode;
 import com.tut2.group3.bank.common.Result;
 import com.tut2.group3.bank.dto.AccountRequestDTO;
 import com.tut2.group3.bank.dto.AccountResponseDTO;
 import com.tut2.group3.bank.entity.Account;
 import com.tut2.group3.bank.exception.BusinessException;
-import com.tut2.group3.bank.repository.AccountRepository;
+import com.tut2.group3.bank.mapper.AccountMapper;
 import com.tut2.group3.bank.service.AccountService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,7 +21,7 @@ import java.time.LocalDateTime;
 @RequiredArgsConstructor
 public class AccountServiceImpl implements AccountService {
 
-    private final AccountRepository accountRepository;
+    private final AccountMapper accountMapper;
     private final ModelMapper modelMapper;
 
     @Override
@@ -37,7 +36,7 @@ public class AccountServiceImpl implements AccountService {
         Account account = modelMapper.map(dto, Account.class);
         account.setCreatedAt(LocalDateTime.now());
 
-        accountRepository.insert(account);
+        accountMapper.insertAccount(account);
         log.info("Account created for userId={}", dto.getUserId());
 
         return Result.success(modelMapper.map(account, AccountResponseDTO.class));
@@ -58,7 +57,7 @@ public class AccountServiceImpl implements AccountService {
 
         account.setBalance(dto.getBalance());
         account.setCurrency(dto.getCurrency());
-        accountRepository.updateById(account);
+        accountMapper.updateAccount(account);
 
         return Result.success(modelMapper.map(account, AccountResponseDTO.class));
     }
@@ -69,20 +68,17 @@ public class AccountServiceImpl implements AccountService {
         log.info("Deleting account for userId={}", userId);
 
         Account account = findAccountByUserIdOrThrow(userId);
-        accountRepository.deleteById(account.getId());
+        accountMapper.deleteById(account.getId());
 
         return Result.success();
     }
 
     private boolean existsByUserId(String userId) {
-        return accountRepository.selectCount(new LambdaQueryWrapper<Account>()
-                .eq(Account::getUserId, userId)) > 0;
+        return accountMapper.countByUserId(userId) > 0;
     }
 
     private Account findAccountByUserIdOrThrow(String userId) {
-        Account account = accountRepository.selectOne(new LambdaQueryWrapper<Account>()
-                .eq(Account::getUserId, userId)
-                .last("limit 1"));
+        Account account = accountMapper.selectByUserId(userId);
 
         if (account == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "Account not found for user " + userId);

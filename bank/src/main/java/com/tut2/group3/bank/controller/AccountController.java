@@ -33,7 +33,13 @@ public class AccountController {
     @GetMapping("/{userId}")
     public Result<AccountResponseDTO> getAccount(@PathVariable String userId) {
         log.info("REST call to get account for userId={}", userId);
-        return accountService.getAccount(userId);
+        Result<AccountResponseDTO> result = accountService.getAccount(userId);
+        if (result == null) {
+            log.warn("AccountService returned null for userId={}", userId);
+        } else {
+            log.debug("AccountService responded with code={} for userId={}", result.getCode(), userId);
+        }
+        return result;
     }
 
     @PutMapping("/{userId}")
