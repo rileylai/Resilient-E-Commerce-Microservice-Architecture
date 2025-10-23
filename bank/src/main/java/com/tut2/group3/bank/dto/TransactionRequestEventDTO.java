@@ -31,6 +31,6 @@ public class TransactionRequestEventDTO {
     }
 
     public RefundRequestDTO toRefundRequest() {
-        return new RefundRequestDTO(orderId, amount, currency);
+        return new RefundRequestDTO(orderId, userId, amount, currency, idempotencyKey);
     }
 }

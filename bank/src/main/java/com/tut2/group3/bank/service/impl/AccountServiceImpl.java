@@ -1,5 +1,6 @@
 package com.tut2.group3.bank.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.tut2.group3.bank.common.ErrorCode;
 import com.tut2.group3.bank.common.Result;
 import com.tut2.group3.bank.dto.AccountRequestDTO;
@@ -36,7 +37,7 @@ public class AccountServiceImpl implements AccountService {
         Account account = modelMapper.map(dto, Account.class);
         account.setCreatedAt(LocalDateTime.now());
 
-        accountMapper.insertAccount(account);
+        accountMapper.insert(account);
         log.info("Account created for userId={}", dto.getUserId());
 
         return Result.success(modelMapper.map(account, AccountResponseDTO.class));
@@ -57,7 +58,7 @@ public class AccountServiceImpl implements AccountService {
 
         account.setBalance(dto.getBalance());
         account.setCurrency(dto.getCurrency());
-        accountMapper.updateAccount(account);
+        accountMapper.updateById(account);
 
         return Result.success(modelMapper.map(account, AccountResponseDTO.class));
     }
@@ -74,11 +75,14 @@ public class AccountServiceImpl implements AccountService {
     }
 
     private boolean existsByUserId(String userId) {
-        return accountMapper.countByUserId(userId) > 0;
+        return accountMapper.selectCount(new LambdaQueryWrapper<Account>()
+                .eq(Account::getUserId, userId)) > 0;
     }
 
     private Account findAccountByUserIdOrThrow(String userId) {
-        Account account = accountMapper.selectByUserId(userId);
+        Account account = accountMapper.selectOne(new LambdaQueryWrapper<Account>()
+                .eq(Account::getUserId, userId)
+                .last("limit 1"));
 
         if (account == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "Account not found for user " + userId);

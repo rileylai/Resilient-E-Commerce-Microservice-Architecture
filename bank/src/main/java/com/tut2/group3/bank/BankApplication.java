@@ -5,7 +5,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-@MapperScan("com.tut2.group3.bank.mapper")
+@MapperScan({"com.tut2.group3.bank.repository", "com.tut2.group3.bank.mapper"})
 public class BankApplication {
 
     // // test

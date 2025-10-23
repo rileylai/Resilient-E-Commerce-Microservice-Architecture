@@ -9,17 +9,24 @@ import com.tut2.group3.bank.entity.Account;
 import com.tut2.group3.bank.entity.Transaction;
 import com.tut2.group3.bank.entity.enums.TransactionStatus;
 import com.tut2.group3.bank.entity.enums.TransactionType;
-import com.tut2.group3.bank.producer.BankEventPublisher;
 import com.tut2.group3.bank.mapper.AccountMapper;
+import com.tut2.group3.bank.producer.BankEventPublisher;
 import com.tut2.group3.bank.repository.TransactionRepository;
 import com.tut2.group3.bank.service.BankService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.CollectionUtils;
+import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Slf4j
@@ -37,7 +44,9 @@ public class BankServiceImpl implements BankService {
     public Result<Transaction> processDebit(DebitRequestDTO dto) {
         log.info("Received debit request for orderId={}, userId={}, amount={} {}", dto.getOrderId(), dto.getUserId(), dto.getAmount(), dto.getCurrency());
 
-        Account account = accountMapper.selectByUserId(dto.getUserId());
+        Account account = accountMapper.selectOne(new LambdaQueryWrapper<Account>()
+                .eq(Account::getUserId, dto.getUserId())
+                .last("limit 1"));
 
         Transaction transaction = createTransaction(dto, TransactionType.DEBIT, "TX");
 
@@ -65,7 +74,7 @@ public class BankServiceImpl implements BankService {
         boolean success = ThreadLocalRandom.current().nextDouble() < 1;
         if (success) {
             account.setBalance(account.getBalance().subtract(dto.getAmount()));
-            accountMapper.updateAccount(account);
+            accountMapper.updateById(account);
 
             transaction.setStatus(TransactionStatus.SUCCEEDED);
             transaction.setMessage("Debit succeeded");
@@ -82,70 +91,131 @@ public class BankServiceImpl implements BankService {
     @Override
     @Transactional
     public Result<Transaction> processRefund(RefundRequestDTO dto) {
-        log.info("Received refund request for orderId={}, amount={} {}", dto.getOrderId(), dto.getAmount(), dto.getCurrency());
+        log.info("Received refund request for orderId={}, userId={}, amount={} {}, idempotencyKey={}",
+                dto.getOrderId(), dto.getUserId(), dto.getAmount(), dto.getCurrency(), dto.getIdempotencyKey());
 
-        Transaction original = transactionRepository.selectOne(new LambdaQueryWrapper<Transaction>()
+        if (dto.getAmount() == null || dto.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            log.warn("Refund request rejected: non-positive amount orderId={} amount={}", dto.getOrderId(), dto.getAmount());
+            return refundFailure(dto, dto.getUserId(), "Refund amount must be greater than zero");
+        }
+
+        Transaction existingByKey = null;
+        if (StringUtils.hasText(dto.getIdempotencyKey())) {
+            existingByKey = transactionRepository.selectOne(new LambdaQueryWrapper<Transaction>()
+                    .eq(Transaction::getIdempotencyKey, dto.getIdempotencyKey()));
+            if (existingByKey != null) {
+                log.info("Refund idempotency hit for key={} status={}", dto.getIdempotencyKey(), existingByKey.getStatus());
+                bankEventPublisher.publishTransactionResult(existingByKey, true);
+                if (existingByKey.getStatus() == TransactionStatus.SUCCEEDED) {
+                    return Result.success(existingByKey);
+                }
+                return Result.error(ErrorCode.REFUND_FAILED,
+                        existingByKey.getMessage() != null ? existingByKey.getMessage() : ErrorCode.REFUND_FAILED.getMessage());
+            }
+        }
+
+        List<Transaction> orderTransactions = transactionRepository.selectList(new LambdaQueryWrapper<Transaction>()
                 .eq(Transaction::getOrderId, dto.getOrderId())
-                .eq(Transaction::getTxType, TransactionType.DEBIT)
-                .orderByDesc(Transaction::getCreatedAt)
-                .last("limit 1"));
+                .last("FOR UPDATE"));
 
-        // Validate original transaction
-        if (original == null) {
-            log.warn("Refund request rejected: no debit found for orderId={}", dto.getOrderId());
-            return Result.error(ErrorCode.REFUND_FAILED, "Original debit not found for order " + dto.getOrderId());
+        if (CollectionUtils.isEmpty(orderTransactions)) {
+            log.warn("Refund request rejected: no transactions found for orderId={}", dto.getOrderId());
+            return refundFailure(dto, dto.getUserId(), "Original debit not found for order " + dto.getOrderId());
         }
 
-        // Only settled transactions can be refunded
-        if (original.getStatus() != TransactionStatus.SUCCEEDED) {
-            log.warn("Refund request rejected: original transaction id={} status={}", original.getId(), original.getStatus());
-            return Result.error(ErrorCode.REFUND_FAILED, "Original transaction not settled for refund");
+        Transaction originalDebit = orderTransactions.stream()
+                .filter(tx -> tx.getTxType() == TransactionType.DEBIT && tx.getStatus() == TransactionStatus.SUCCEEDED)
+                .max(Comparator.comparing(Transaction::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                .orElse(null);
+
+        if (originalDebit == null) {
+            log.warn("Refund request rejected: no settled debit found for orderId={}", dto.getOrderId());
+            return refundFailure(dto, dto.getUserId(), "Original transaction not settled for refund");
         }
 
-        // Validate refund amount and currency
-        if (dto.getAmount().compareTo(original.getAmount()) > 0) {
-            log.warn("Refund request rejected: amount {} exceeds original {}", dto.getAmount(), original.getAmount());
-            return Result.error(ErrorCode.REFUND_FAILED, "Refund amount exceeds original debit");
+        if (originalDebit.getCurrency() != null && dto.getCurrency() != null
+                && !originalDebit.getCurrency().equalsIgnoreCase(dto.getCurrency())) {
+            log.warn("Refund request rejected: currency mismatch for orderId={} original={} refund={}",
+                    dto.getOrderId(), originalDebit.getCurrency(), dto.getCurrency());
+            return refundFailure(dto, originalDebit.getUserId(), "Currency mismatch for refund");
         }
 
-        // Currency must match
-        if (original.getCurrency() != null && dto.getCurrency() != null
-                && !original.getCurrency().equalsIgnoreCase(dto.getCurrency())) {
-            log.warn("Refund request rejected: currency mismatch for orderId={}", dto.getOrderId());
-            return Result.error(ErrorCode.REFUND_FAILED, "Currency mismatch for refund");
+        BigDecimal debitAmount = safe(originalDebit.getAmount());
+        BigDecimal refundedAmount = orderTransactions.stream()
+                .filter(tx -> tx.getTxType() == TransactionType.REFUND && tx.getStatus() == TransactionStatus.SUCCEEDED)
+                .map(Transaction::getAmount)
+                .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal projectedRefundTotal = refundedAmount.add(dto.getAmount());
+        if (projectedRefundTotal.compareTo(debitAmount) > 0) {
+            log.warn("Refund request rejected: refund total would exceed debit orderId={} debitAmount={} refunded={} requested={}",
+                    dto.getOrderId(), debitAmount, refundedAmount, dto.getAmount());
+            return refundFailure(dto, originalDebit.getUserId(), "Refund exceeds available balance");
         }
 
-        Account account = accountMapper.selectByUserId(original.getUserId());
+        Account account = accountMapper.selectOne(new LambdaQueryWrapper<Account>()
+                .eq(Account::getUserId, originalDebit.getUserId())
+                .last("LIMIT 1 FOR UPDATE"));
 
-        // Validate account existence
         if (account == null) {
-            log.warn("Refund request rejected: account not found for user {}", original.getUserId());
-            return Result.error(ErrorCode.REFUND_FAILED, "Account not found for user " + original.getUserId());
+            log.warn("Refund request rejected: account not found for user {}", originalDebit.getUserId());
+            return refundFailure(dto, originalDebit.getUserId(), "Account not found for user " + originalDebit.getUserId());
+        }
+
+        if (account.getCurrency() != null && dto.getCurrency() != null
+                && !account.getCurrency().equalsIgnoreCase(dto.getCurrency())) {
+            log.warn("Refund request rejected: account currency mismatch userId={} accountCurrency={} refundCurrency={}",
+                    account.getUserId(), account.getCurrency(), dto.getCurrency());
+            return refundFailure(dto, account.getUserId(), "Account currency mismatch for refund");
+        }
+
+        if (StringUtils.hasText(dto.getIdempotencyKey())) {
+            Transaction duplicateAfterLock = transactionRepository.selectOne(new LambdaQueryWrapper<Transaction>()
+                    .eq(Transaction::getIdempotencyKey, dto.getIdempotencyKey())
+                    .last("FOR UPDATE"));
+            if (duplicateAfterLock != null) {
+                log.info("Refund idempotency key={} already processed after lock with status={}",
+                        dto.getIdempotencyKey(), duplicateAfterLock.getStatus());
+                bankEventPublisher.publishTransactionResult(duplicateAfterLock, true);
+                if (duplicateAfterLock.getStatus() == TransactionStatus.SUCCEEDED) {
+                    return Result.success(duplicateAfterLock);
+                }
+                return Result.error(ErrorCode.REFUND_FAILED,
+                        duplicateAfterLock.getMessage() != null ? duplicateAfterLock.getMessage() : ErrorCode.REFUND_FAILED.getMessage());
+            }
         }
 
         Transaction refund = createTransaction(dto, TransactionType.REFUND, "RF");
-        refund.setUserId(original.getUserId());
+        refund.setUserId(originalDebit.getUserId());
+        refund.setIdempotencyKey(dto.getIdempotencyKey());
+        refund.setStatus(TransactionStatus.SUCCEEDED);
+        refund.setMessage("Refund succeeded");
 
-        transactionRepository.insert(refund);
-        log.info("Persisted refund transaction id={} with bankTxId={}", refund.getId(), refund.getBankTxId());
-
-        // Simulates a random chance of success or failure
-        // If the number is less than 0.5, we consider the transaction a success (now set to 1, all succeed)
-        boolean success = ThreadLocalRandom.current().nextDouble() < 1;
-        if (success) {
-            account.setBalance(account.getBalance().add(dto.getAmount()));
-            accountMapper.updateAccount(account);
-
-            refund.setStatus(TransactionStatus.SUCCEEDED);
-            refund.setMessage("Refund succeeded");
-            transactionRepository.updateById(refund);
-            log.info("Refund transaction id={} succeeded; new balance={}", refund.getId(), account.getBalance());
-            bankEventPublisher.publishTransactionResult(refund);
-            return Result.success(refund);
+        try {
+            transactionRepository.insert(refund);
+            log.info("Persisted refund transaction id={} bankTxId={} orderId={} amount={}",
+                    refund.getId(), refund.getBankTxId(), refund.getOrderId(), refund.getAmount());
+        } catch (DuplicateKeyException duplicateKeyException) {
+            log.info("Refund insert skipped due to duplicate idempotency key={} orderId={}",
+                    dto.getIdempotencyKey(), dto.getOrderId());
+            Transaction persisted = transactionRepository.selectOne(new LambdaQueryWrapper<Transaction>()
+                    .eq(Transaction::getIdempotencyKey, dto.getIdempotencyKey()));
+            if (persisted != null) {
+                bankEventPublisher.publishTransactionResult(persisted, true);
+                return Result.success(persisted);
+            }
+            throw duplicateKeyException;
         }
 
-        // Simulate failure
-        return failTransaction(refund, "Bank declined refund", ErrorCode.REFUND_FAILED);
+        BigDecimal currentBalance = safe(account.getBalance());
+        account.setBalance(currentBalance.add(dto.getAmount()));
+        accountMapper.updateById(account);
+
+        log.info("Refund transaction id={} succeeded; cumulative refunded={} of debit={} for orderId={}",
+                refund.getId(), projectedRefundTotal, debitAmount, dto.getOrderId());
+        bankEventPublisher.publishTransactionResult(refund);
+        return Result.success(refund);
     }
 
     private Transaction createTransaction(Object source, TransactionType type, String prefix) {
@@ -160,7 +230,9 @@ public class BankServiceImpl implements BankService {
     private Result<Transaction> failTransaction(Transaction transaction, String message, ErrorCode errorCode) {
         transaction.setStatus(TransactionStatus.FAILED);
         transaction.setMessage(message);
-        transactionRepository.updateById(transaction);
+        if (transaction.getId() != null) {
+            transactionRepository.updateById(transaction);
+        }
         log.warn("Transaction id={} failed: {}", transaction.getId(), message);
         bankEventPublisher.publishTransactionResult(transaction);
         return Result.error(errorCode, message);
@@ -168,5 +240,25 @@ public class BankServiceImpl implements BankService {
 
     private String generateTxId(String prefix) {
         return prefix + System.currentTimeMillis();
+    }
+
+    private Result<Transaction> refundFailure(RefundRequestDTO dto, String userId, String message) {
+        Transaction failure = new Transaction();
+        failure.setOrderId(dto.getOrderId());
+        failure.setUserId(userId);
+        failure.setTxType(TransactionType.REFUND);
+        failure.setAmount(dto.getAmount());
+        failure.setCurrency(dto.getCurrency());
+        failure.setStatus(TransactionStatus.FAILED);
+        failure.setMessage(message);
+        failure.setBankTxId(generateTxId("RF"));
+        failure.setCreatedAt(LocalDateTime.now());
+        failure.setIdempotencyKey(dto.getIdempotencyKey());
+        bankEventPublisher.publishTransactionResult(failure, true);
+        return Result.error(ErrorCode.REFUND_FAILED, message);
+    }
+
+    private BigDecimal safe(BigDecimal value) {
+        return value != null ? value : BigDecimal.ZERO;
     }
 }
