@@ -19,6 +19,7 @@ public class WebConfig implements WebMvcConfigurer {
                 // intercept without login and register
                 .excludePathPatterns("/user/login")
                 .excludePathPatterns("/user/register")
+                .excludePathPatterns("/product/**")  // Allow public access to product endpoints
                 .excludePathPatterns("/swagger-ui/**")
                 .excludePathPatterns("/swagger-ui.html")
                 .excludePathPatterns("/v3/api-docs/**");

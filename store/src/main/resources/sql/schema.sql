@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS order_item (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `order_id` BIGINT UNSIGNED NOT NULL,
     `product_id` BIGINT UNSIGNED NOT NULL,
+    `product_name` VARCHAR(255),
     `quantity` INT NOT NULL,
     `price` DECIMAL(10,2) NOT NULL,
     PRIMARY KEY (`id`),

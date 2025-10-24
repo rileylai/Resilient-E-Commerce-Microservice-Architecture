@@ -3,6 +3,7 @@ package com.tut2.group3.warehouse.controller;
 import com.tut2.group3.warehouse.common.ErrorCode;
 import com.tut2.group3.warehouse.common.Result;
 import com.tut2.group3.warehouse.dto.response.ProductPriceResponse;
+import com.tut2.group3.warehouse.dto.response.ProductWithStockDto;
 import com.tut2.group3.warehouse.entity.Product;
 import com.tut2.group3.warehouse.service.ProductService;
 import lombok.RequiredArgsConstructor;
@@ -22,9 +23,9 @@ public class ProductController {
     private final ProductService productService;
 
     @GetMapping
-    public Result<List<Product>> getAllProducts() {
+    public Result<List<ProductWithStockDto>> getAllProducts() {
         try {
-            List<Product> products = productService.getAllProducts();
+            List<ProductWithStockDto> products = productService.getAllProductsWithStock();
             String message = products.isEmpty()
                     ? "No products available"
                     : "Found " + products.size() + " product(s)";

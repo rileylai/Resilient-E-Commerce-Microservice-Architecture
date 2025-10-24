@@ -276,32 +276,13 @@ public class OrderServiceImpl implements OrderService {
             
             // Build response
             List<OrderItemDetailDto> itemDetails = orderItems.stream()
-                    .map(item -> {
-                        // Get product info from warehouse
-                        try {
-                            Result<ProductPriceResponse> productResult = warehouseClient.getProductPrice(item.getProductId(), null);
-                            if (productResult.getCode() == 200 && productResult.getData() != null) {
-                                ProductPriceResponse product = productResult.getData();
-                                return new OrderItemDetailDto(
-                                        item.getProductId(),
-                                        product.getName(),
-                                        item.getQuantity(),
-                                        item.getPrice(),
-                                        item.getPrice() * item.getQuantity()
-                                );
-                            }
-                        } catch (Exception e) {
-                            log.warn("Failed to get product info for product: {}", item.getProductId());
-                        }
-                        
-                        return new OrderItemDetailDto(
-                                item.getProductId(),
-                                "Product " + item.getProductId(),
-                                item.getQuantity(),
-                                item.getPrice(),
-                                item.getPrice() * item.getQuantity()
-                        );
-                    })
+                    .map(item -> new OrderItemDetailDto(
+                            item.getProductId(),
+                            item.getProductName() != null ? item.getProductName() : "Product " + item.getProductId(),
+                            item.getQuantity(),
+                            item.getPrice(),
+                            item.getPrice() * item.getQuantity()
+                    ))
                     .collect(Collectors.toList());
             
             OrderResponseDto response = new OrderResponseDto();
@@ -337,7 +318,7 @@ public class OrderServiceImpl implements OrderService {
                         List<OrderItemDetailDto> itemDetails = orderItems.stream()
                                 .map(item -> new OrderItemDetailDto(
                                         item.getProductId(),
-                                        "Product " + item.getProductId(),
+                                        item.getProductName() != null ? item.getProductName() : "Product " + item.getProductId(),
                                         item.getQuantity(),
                                         item.getPrice(),
                                         item.getPrice() * item.getQuantity()
@@ -420,6 +401,7 @@ public class OrderServiceImpl implements OrderService {
 
             OrderItem orderItem = new OrderItem();
             orderItem.setProductId(product.getId());
+            orderItem.setProductName(product.getName());
             orderItem.setQuantity(itemReq.getQuantity());
             orderItem.setPrice(price);
             orderItems.add(orderItem);
