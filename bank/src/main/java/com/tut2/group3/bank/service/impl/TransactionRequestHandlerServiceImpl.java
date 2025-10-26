@@ -38,18 +38,10 @@ public class TransactionRequestHandlerServiceImpl implements TransactionRequestH
             return;
         }
 
-        Transaction existing = findByIdempotencyKey(request.getIdempotencyKey());
+        Transaction existing = findLatestTransaction(request.getOrderId(), txType);
         if (isIdempotentHit(existing)) {
-            log.info("Skipping duplicate transaction via idempotency orderId={} txType={} status={} idempotencyKey={}",
-                    request.getOrderId(), txType, existing.getStatus(), request.getIdempotencyKey());
-            bankEventPublisher.publishTransactionResult(existing, true);
-            return;
-        }
-
-        existing = findLatestTransaction(request.getOrderId(), txType);
-        if (isIdempotentHit(existing)) {
-            log.info("Skipping duplicate transaction orderId={} txType={} status={} idempotencyKey={}",
-                    request.getOrderId(), txType, existing.getStatus(), request.getIdempotencyKey());
+            log.info("Skipping duplicate transaction orderId={} txType={} status={}",
+                    request.getOrderId(), txType, existing.getStatus());
             bankEventPublisher.publishTransactionResult(existing, true);
             return;
         }
@@ -101,18 +93,6 @@ public class TransactionRequestHandlerServiceImpl implements TransactionRequestH
                 .orderByDesc(Transaction::getCreatedAt)
                 .last("limit 1"));
     }
-    
-    private Transaction findByIdempotencyKey(String idempotencyKey) {
-        if (!StringUtils.hasText(idempotencyKey)) {
-            return null;
-        }
-
-        return transactionRepository.selectOne(new LambdaQueryWrapper<Transaction>()
-                .eq(Transaction::getIdempotencyKey, idempotencyKey)
-                .orderByDesc(Transaction::getCreatedAt)
-                .last("limit 1"));
-    }
-
     private boolean isIdempotentHit(Transaction transaction) {
         return transaction != null && transaction.getStatus() == TransactionStatus.SUCCEEDED;
     }

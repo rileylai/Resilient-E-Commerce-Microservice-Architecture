@@ -16,11 +16,10 @@ public class TransactionRequestConsumer {
 
     @RabbitListener(queues = "${bank.rabbitmq.request-queue}")
     public void consumeTransactionRequest(TransactionRequestEventDTO request) {
-        log.info("Received transaction request eventType={} orderId={} userId={} idempotencyKey={}",
+        log.info("Received transaction request eventType={} orderId={} userId={}",
                 request != null ? request.getEventType() : null,
                 request != null ? request.getOrderId() : null,
-                request != null ? request.getUserId() : null,
-                request != null ? request.getIdempotencyKey() : null);
+                request != null ? request.getUserId() : null);
         try {
             // Handle incoming debit/refund request from Store
             handlerService.handleTransactionRequest(request);

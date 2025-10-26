@@ -33,19 +33,22 @@ public interface BankClient {
     /**
      * Get account by user ID
      */
-    @GetMapping("/api/account/{userId}")
-    Result<AccountResponseDto> getAccount(@PathVariable("userId") String userId);
+    @GetMapping("/api/account/{userId}/{currency}")
+    Result<AccountResponseDto> getAccount(@PathVariable("userId") String userId,
+                                          @PathVariable("currency") String currency);
 
     /**
      * Update account information
      */
-    @PutMapping("/api/account/{userId}")
+    @PutMapping("/api/account/{userId}/{currency}")
     Result<AccountResponseDto> updateAccount(@PathVariable("userId") String userId,
+                                             @PathVariable("currency") String currency,
                                              @Valid @RequestBody AccountRequestDto dto);
 
     /**
      * Delete account by user ID
      */
-    @DeleteMapping("/api/account/{userId}")
-    Result<Void> deleteAccount(@PathVariable("userId") String userId);
+    @DeleteMapping("/api/account/{userId}/{currency}")
+    Result<Void> deleteAccount(@PathVariable("userId") String userId,
+                               @PathVariable("currency") String currency);
 }

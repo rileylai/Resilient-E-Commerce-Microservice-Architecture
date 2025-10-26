@@ -24,13 +24,12 @@ public class TransactionRequestEventDTO {
     private BigDecimal amount;
     private String currency;
     private LocalDateTime timestamp;
-    private String idempotencyKey;
 
     public DebitRequestDTO toDebitRequest() {
         return new DebitRequestDTO(orderId, userId, amount, currency);
     }
 
     public RefundRequestDTO toRefundRequest() {
-        return new RefundRequestDTO(orderId, userId, amount, currency, idempotencyKey);
+        return new RefundRequestDTO(orderId, userId, amount, currency, null);
     }
 }
