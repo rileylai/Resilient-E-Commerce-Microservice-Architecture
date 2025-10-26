@@ -1,114 +1,254 @@
-# Bank Service README
+# Bank Microservice
 
-## 1. Project Overview
-This bank service is part of our small e-commerce platform. It manages payment tasks for customer orders. The service handles debit and refund logic, talks to the database, protects calls with JWT, and exchanges messages with RabbitMQ. This document gives you a quick start guide.
-
-## 2. Main Features
-- **Debit flow**: When the store asks for a debit, we check the user account, confirm the currency, and make sure enough balance exists. If the debit passes, we subtract money and mark the transaction as `SUCCEEDED`. If not, we mark it as `FAILED`.
-- **Refund flow**: When the store asks for a refund, we find the original debit, check if it succeeded, and ensure the refund amount is not larger than the original amount. We then add money back to the account and mark the refund as `SUCCEEDED`, or mark it as `FAILED` if something goes wrong.
-- **Idempotency**: Each message from RabbitMQ carries an `idempotencyKey`. We ignore duplicate messages so we do not charge or refund twice. This makes the system safe during retries.
-
-## 3. Tech Stack
-- **Java 17**
-- **Spring Boot 3**
-- **MyBatis-Plus** for database mapper
-- **MySQL** as data store
-- **RabbitMQ** for asynchronous events
-- **JWT (JSON Web Token)** for API security
-
-## 4. Folder Structure and Key Files
-```
-bank/
-├── pom.xml                           # Maven build file
-├── docker-compose.yml                # Optional local services (MySQL, RabbitMQ)
-├── src/main/java/com/tut2/group3/bank
-│   ├── BankApplication.java          # Spring Boot main class
-│   ├── config/                       # Security + RabbitMQ configuration
-│   ├── consumer/                     # RabbitMQ listeners
-│   ├── dto/                          # Data transfer objects
-│   ├── entity/                       # Database entities
-│   ├── producer/                     # RabbitMQ event publisher
-│   ├── repository/                   # MyBatis-Plus mappers
-│   ├── service/                      # Service interfaces and logic
-│   └── controller/                   # REST endpoints
-└── src/main/resources
-    └── application.properties        # Application configuration
-```
-
-## 5. How to Set Up Locally
-1. Install **Java 17** and **Maven 3.9+**.
-2. Install **MySQL 8+** and **RabbitMQ 3.12+** (Docker is fine).
-3. Create a database named `5348_bank_service_db`.
-4. Load the schema from your SQL scripts (ask the team for the latest file).
-5. Copy the sample configuration below into `src/main/resources/application.properties` (adjust passwords to match your setup).
-6. Optional: use the provided `docker-compose.yml` to start MySQL and RabbitMQ quickly.
-
-### Sample Configuration
-```properties
-spring.datasource.url=jdbc:mysql://localhost:3306/5348_bank_service_db?useSSL=false&serverTimezone=UTC
-spring.datasource.username=root
-spring.datasource.password=your_mysql_password
-
-spring.rabbitmq.host=localhost
-spring.rabbitmq.port=5672
-spring.rabbitmq.username=guest
-spring.rabbitmq.password=guest
-
-bank.rabbitmq.queue-name=bank.events.queue
-bank.rabbitmq.request-queue=bank.transaction.requests
-```
-
-## 6. How to Run the Project
-1. Start MySQL and RabbitMQ.
-2. In the `bank` folder, run:
-   ```bash
-   mvn spring-boot:run
-   ```
-3. The service runs on `http://localhost:8080`.
-4. Check the logs to confirm successful startup.
-
-## 7. How to Test the API (with Postman)
-1. Open Postman and create a new collection.
-2. Add an **Authorization** header with `Type: Bearer Token`.
-3. Paste your JWT token into the token field (see section 9 for how to get it).
-4. Create a **POST** request to `http://localhost:8080/api/bank/debit`.
-5. Use the sample JSON body shown in section 8.
-6. Send the request and review the response. A 200 code means success.
-7. Repeat the same steps for the refund endpoint.
-
-## 8. API Endpoints
-| Method | Path                | Description                       | Body Example |
-|--------|---------------------|-----------------------------------|--------------|
-| POST   | `/api/bank/debit`   | Debit a user account              | ```json<br>{<br>  "orderId": "order001",<br>  "userId": "1",<br>  "amount": 50.00,<br>  "currency": "AUD"<br>}``` |
-| POST   | `/api/bank/refund`  | Refund a user account             | ```json<br>{<br>  "orderId": "order001,<br>  "amount": 50.00,<br>  "currency": "AUD"<br>}``` |
-
-**Note:** Every request must have the header `Authorization: Bearer <your-token>`.
-
-## 9. How JWT Token Works
-- Our API uses JWT to make sure only trusted services call these endpoints.
-- A normal flow:
-  1. Log in to the auth service (ask team for the correct URL) with username and password.
-  2. The auth service returns a JWT string (for example `eyJhbGciOiJIUzI1NiIs...`).
-  3. In Postman or curl, set the header `Authorization: Bearer <JWT>`.
-  4. The Bank service reads the token using our custom JWT filter (`JWTFilter`).
-- Without the token, the service returns HTTP 401 (Unauthorized).
-
-## 10. RabbitMQ Integration
-- **Purpose**: RabbitMQ lets the store send payment instructions without waiting. It also gets results asynchronously.
-- **Incoming queue**: `bank.transaction.requests`. The store pushes `DebitRequest` or `RefundRequest` events here. Our `TransactionRequestConsumer` listens to this queue.
-- **Outgoing queue**: `bank.events.queue`. After the bank processes a debit or refund, it publishes a `TransactionResultEventDTO`.
-- **Idempotency**: Each incoming message includes an `idempotencyKey`. If RabbitMQ retries the same message, our handler checks if we already processed a successful transaction for the same order. If yes, we reuse the stored result and avoid a double debit or refund. This keeps money safe.
-
-## 11. Common Problems & Solutions
-- **Problem:** `Cannot connect to MySQL`.  
-  **Fix:** Check MySQL is running, confirm username/password in `application.properties`, and ensure the port is 3306.
-- **Problem:** `RabbitMQ connection refused`.  
-  **Fix:** Make sure RabbitMQ is running, the port is 5672, and the credentials are correct.
-- **Problem:** `HTTP 401 Unauthorized`.  
-  **Fix:** Provide a valid JWT in the `Authorization` header, or request a new token from the auth service.
-- **Problem:** `Duplicate debit seen in logs`.  
-  **Fix:** Confirm the incoming messages have unique `idempotencyKey`. If the store retries, the bank will skip duplicates but still log them.
+Enterprise-grade Spring Boot service that safeguards wallet balances, executes debits/refunds, and keeps the marketplace ledger consistent. It exposes synchronous REST APIs, consumes RabbitMQ events, and persists every transaction in MySQL with strict ordering rules.
 
 ---
 
-You are ready to explore the Bank Service. Keep experiments small, watch the logs, and ask the team if you feel unsure. Welcome aboard!
+## Overview
+- **Purpose**: Central payment hub that enforces one-wallet-per-currency, powers all debits/refunds, and publishes authoritative transaction outcomes.
+- **Scope**: Handles customer wallet management, store settlement (store wallet is user `2`), balances RabbitMQ-driven retries, and guarantees each order is charged only once.
+
+---
+
+## Tech Stack
+- **Spring Boot 3** (REST, dependency management)
+- **Java 17**
+- **MyBatis-Plus** (ORM / query helpers)
+- **MySQL 8+**
+- **RabbitMQ 3.x**
+- **ModelMapper**, **Lombok**
+- **Maven 3.9+**
+
+---
+
+## Key Features
+1. **Order-based debit idempotency** – `orderId` is unique per successful debit, blocking duplicate charges.
+2. **Double-entry fund transfers** – Debits move funds user → store (`userId = "2"`); refunds reverse the flow.
+3. **Hybrid communications** – REST endpoints for synchronous calls, RabbitMQ pipeline for async retries.
+4. **DTO isolation** – Clean separation between transport models and persistence entities.
+5. **Consistent error model** – `Result<T>` responses with domain error codes, rich logging, and tracing.
+
+---
+
+## REST API Usage
+Base URL: `http://localhost:8081`
+
+### `POST /api/bank/debit`
+- **Purpose**: Charge a customer wallet and credit the store wallet for a specific order.
+- **Typical use**: Store service confirms checkout success.
+- **Request**
+```json
+{
+  "orderId": "order001",
+  "userId": "1",
+  "amount": 150.00,
+  "currency": "AUD"
+}
+```
+- **Success**
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "id": 9001,
+    "orderId": "order001",
+    "userId": "1",
+    "txType": "DEBIT",
+    "status": "SUCCEEDED",
+    "amount": 150.00,
+    "currency": "AUD"
+  }
+}
+```
+- **Duplicate order failure**
+```json
+{
+  "code": 511,
+  "message": "Order already debited",
+  "data": null
+}
+```
+
+---
+
+### `POST /api/bank/refund`
+- **Purpose**: Move funds back from the store wallet to the customer.
+- **Typical use**: Order cancellation or partial refund.
+- **Request**
+```json
+{
+  "orderId": "order001",
+  "userId": "1",
+  "amount": 50.00,
+  "currency": "AUD",
+  "idempotencyKey": "order001-refund01"
+}
+```
+- **Idempotency tip**: use a unique key per refund attempt (`order001-refund01`, `order001-refund02`, …). The service accumulates all successful refunds per order and rejects totals that exceed the original debit.
+- **Success**
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "id": 9100,
+    "orderId": "order001",
+    "userId": "1",
+    "txType": "REFUND",
+    "status": "SUCCEEDED",
+    "amount": 50.00,
+    "currency": "AUD"
+  }
+}
+```
+- **Exceeds debit failure**
+```json
+{
+  "code": 512,
+  "message": "Refund exceeds available balance",
+  "data": null
+}
+```
+
+---
+
+### `GET /api/account/{userId}/{currency}`
+- **Purpose**: Fetch a wallet by user + currency.
+- **Typical use**: Customer portal, store balance verification.
+- **Success**
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "userId": "42",
+    "currency": "AUD",
+    "balance": 725.50,
+    "createdAt": "2024-11-19T19:32:11"
+  }
+}
+```
+- **Missing account**
+```json
+{
+  "code": 404,
+  "message": "Account not found for user 42 and currency AUD",
+  "data": null
+}
+```
+
+---
+
+## RabbitMQ Integration
+
+- **Incoming queue**: `bank.transactions.request`
+- **Outgoing queue**: `bank.transactions.result`
+
+### Event payloads (`TransactionRequestEventDTO`)
+**Debit event**
+```json
+{
+  "eventType": "DEBIT_REQUEST",
+  "orderId": "order001",
+  "userId": "1",
+  "amount": 150.00,
+  "currency": "AUD",
+  "timestamp": "2024-11-20T10:15:30Z"
+}
+```
+**Refund event**
+```json
+{
+  "eventType": "REFUND_REQUEST",
+  "orderId": "order001",
+  "userId": "1",
+  "amount": 50.00,
+  "currency": "AUD",
+  "timestamp": "2024-11-21T08:02:03Z",
+  "idempotencyKey": "order001-refund01"
+}
+```
+
+### Processing lifecycle
+1. **Consumer** receives the event and hands it to `TransactionRequestHandlerService`.
+2. **Handler** normalizes the event type, checks for a previously successful transaction (`orderId + txType`), and skips duplicates.
+3. **Service layer** executes `processDebit` or `processRefund` with the same validations as REST.
+4. **Persistence** ensures a `transactions` row plus updated account balances.
+5. **Publisher** emits a `TransactionResultEventDTO` back to `bank.transactions.result`.
+
+### Result examples
+**Success**
+```json
+{
+  "orderId": "order001",
+  "userId": "1",
+  "txType": "DEBIT",
+  "status": "SUCCEEDED",
+  "amount": 150.00,
+  "currency": "AUD",
+  "message": "Debit succeeded"
+}
+```
+**Failure**
+```json
+{
+  "orderId": "order001",
+  "userId": "1",
+  "txType": "DEBIT",
+  "status": "FAILED",
+  "amount": 150.00,
+  "currency": "AUD",
+  "message": "Insufficient funds"
+}
+```
+
+---
+
+## Business Logic
+### Debit
+1. Reject if `orderId` already has a successful debit (idempotency by order).
+2. Lock customer `(userId, currency)` and store `(userId = "2", currency)` accounts.
+3. Confirm customer funds ≥ requested amount.
+4. Subtract from customer, add to store, persist `DEBIT / SUCCEEDED`.
+
+### Refund
+1. Find the original successful debit and ensure cumulative refunds ≤ debit amount.
+2. Lock customer and store accounts in the target currency.
+3. Confirm store wallet has enough funds to return.
+4. Subtract from store, add to customer, persist `REFUND / SUCCEEDED` keyed by `idempotencyKey` so retries for the same refund attempt (e.g., `order001-refund-01`, `order001-refund-02`) do not double-credit the customer.
+
+---
+
+## Project Structure
+```
+src/main/java/com/tut2/group3/bank
+├── controller/   # REST endpoints
+├── service/      # Interfaces + implementations
+├── dto/          # Request/response objects
+├── entity/       # MyBatis-Plus entities
+├── repository/   # Mapper interfaces
+├── consumer/     # RabbitMQ listeners
+└── producer/     # RabbitMQ publishers
+```
+
+---
+
+## Setup Instructions
+1. **Clone** and `cd bank`.
+2. **Configure DB & RabbitMQ** in `src/main/resources/application.properties`.
+3. **Apply schema** using `src/main/resources/sql/schema.sql` against `5348_bank_service_db`.
+4. **Build**: `mvn clean install`.
+5. **Run**: `mvn spring-boot:run` (listens on port `8081`).
+6. **Smoke test**: `curl http://localhost:8081/actuator/health`.
+
+---
+
+## Notes
+- Store systems never need the store wallet ID; the Bank service hardcodes it as `"2"`.
+- Each user may hold **only one account per currency**. Violations are rejected at the service and DB level.
+- `orderId` must be unique per successful debit—reuse triggers `Order already debited`.
+
+---
+
+Questions or onboarding needs? Reach out to the platform team—happy shipping! 💸

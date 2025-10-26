@@ -34,6 +34,8 @@ import java.util.concurrent.ThreadLocalRandom;
 @RequiredArgsConstructor
 public class BankServiceImpl implements BankService {
 
+    private static final String STORE_USER_ID = "2";
+
     private final TransactionRepository transactionRepository;
     private final AccountMapper accountMapper;
     private final ModelMapper modelMapper;
@@ -44,9 +46,24 @@ public class BankServiceImpl implements BankService {
     public Result<Transaction> processDebit(DebitRequestDTO dto) {
         log.info("Received debit request for orderId={}, userId={}, amount={} {}", dto.getOrderId(), dto.getUserId(), dto.getAmount(), dto.getCurrency());
 
+        Transaction existingDebit = transactionRepository.selectOne(new LambdaQueryWrapper<Transaction>()
+                .eq(Transaction::getOrderId, dto.getOrderId())
+                .eq(Transaction::getTxType, TransactionType.DEBIT)
+                .eq(Transaction::getStatus, TransactionStatus.SUCCEEDED));
+        if (existingDebit != null) {
+            log.warn("Duplicate debit detected for orderId={}", dto.getOrderId());
+            return Result.error(ErrorCode.DEBIT_FAILED, "Order already debited");
+        }
+
         Account account = accountMapper.selectOne(new LambdaQueryWrapper<Account>()
                 .eq(Account::getUserId, dto.getUserId())
-                .last("limit 1"));
+                .eq(Account::getCurrency, dto.getCurrency())
+                .last("LIMIT 1 FOR UPDATE"));
+
+        Account storeAccount = accountMapper.selectOne(new LambdaQueryWrapper<Account>()
+                .eq(Account::getUserId, STORE_USER_ID)
+                .eq(Account::getCurrency, dto.getCurrency())
+                .last("LIMIT 1 FOR UPDATE"));
 
         Transaction transaction = createTransaction(dto, TransactionType.DEBIT, "TX");
 
@@ -64,6 +81,11 @@ public class BankServiceImpl implements BankService {
             return failTransaction(transaction, "Currency mismatch for account " + account.getId(), ErrorCode.DEBIT_FAILED);
         }
 
+        // Validate store account (id=2)
+        if (storeAccount == null) {
+            return failTransaction(transaction, "Store account not found for currency " + dto.getCurrency(), ErrorCode.DEBIT_FAILED);
+        }
+
         // Validate sufficient balance
         if (account.getBalance() == null || account.getBalance().compareTo(dto.getAmount()) < 0) {
             return failTransaction(transaction, "Insufficient funds", ErrorCode.DEBIT_FAILED);
@@ -75,6 +97,10 @@ public class BankServiceImpl implements BankService {
         if (success) {
             account.setBalance(account.getBalance().subtract(dto.getAmount()));
             accountMapper.updateById(account);
+
+            BigDecimal storeCurrentBalance = safe(storeAccount.getBalance());
+            storeAccount.setBalance(storeCurrentBalance.add(dto.getAmount()));
+            accountMapper.updateById(storeAccount);
 
             transaction.setStatus(TransactionStatus.SUCCEEDED);
             transaction.setMessage("Debit succeeded");
@@ -154,20 +180,38 @@ public class BankServiceImpl implements BankService {
             return refundFailure(dto, originalDebit.getUserId(), "Refund exceeds available balance");
         }
 
-        Account account = accountMapper.selectOne(new LambdaQueryWrapper<Account>()
+        Account customerAccount = accountMapper.selectOne(new LambdaQueryWrapper<Account>()
                 .eq(Account::getUserId, originalDebit.getUserId())
+                .eq(Account::getCurrency, originalDebit.getCurrency())
                 .last("LIMIT 1 FOR UPDATE"));
 
-        if (account == null) {
+        if (customerAccount == null) {
             log.warn("Refund request rejected: account not found for user {}", originalDebit.getUserId());
             return refundFailure(dto, originalDebit.getUserId(), "Account not found for user " + originalDebit.getUserId());
         }
 
-        if (account.getCurrency() != null && dto.getCurrency() != null
-                && !account.getCurrency().equalsIgnoreCase(dto.getCurrency())) {
+        if (customerAccount.getCurrency() != null && dto.getCurrency() != null
+                && !customerAccount.getCurrency().equalsIgnoreCase(dto.getCurrency())) {
             log.warn("Refund request rejected: account currency mismatch userId={} accountCurrency={} refundCurrency={}",
-                    account.getUserId(), account.getCurrency(), dto.getCurrency());
-            return refundFailure(dto, account.getUserId(), "Account currency mismatch for refund");
+                    customerAccount.getUserId(), customerAccount.getCurrency(), dto.getCurrency());
+            return refundFailure(dto, customerAccount.getUserId(), "Account currency mismatch for refund");
+        }
+
+        Account storeAccount = accountMapper.selectOne(new LambdaQueryWrapper<Account>()
+                .eq(Account::getUserId, STORE_USER_ID)
+                .eq(Account::getCurrency, originalDebit.getCurrency())
+                .last("LIMIT 1 FOR UPDATE"));
+
+        if (storeAccount == null) {
+            log.warn("Refund request rejected: store account not found for currency {}", dto.getCurrency());
+            return refundFailure(dto, originalDebit.getUserId(), "Store account not found for currency " + dto.getCurrency());
+        }
+
+        BigDecimal storeAvailable = safe(storeAccount.getBalance());
+        if (storeAvailable.compareTo(dto.getAmount()) < 0) {
+            log.warn("Refund request rejected: store account insufficient funds currency={} balance={} requested={}",
+                    storeAccount.getCurrency(), storeAccount.getBalance(), dto.getAmount());
+            return refundFailure(dto, originalDebit.getUserId(), "Store account insufficient funds");
         }
 
         if (StringUtils.hasText(dto.getIdempotencyKey())) {
@@ -208,9 +252,12 @@ public class BankServiceImpl implements BankService {
             throw duplicateKeyException;
         }
 
-        BigDecimal currentBalance = safe(account.getBalance());
-        account.setBalance(currentBalance.add(dto.getAmount()));
-        accountMapper.updateById(account);
+        BigDecimal clientCurrentBalance = safe(customerAccount.getBalance());
+        customerAccount.setBalance(clientCurrentBalance.add(dto.getAmount()));
+        accountMapper.updateById(customerAccount);
+
+        storeAccount.setBalance(storeAvailable.subtract(dto.getAmount()));
+        accountMapper.updateById(storeAccount);
 
         log.info("Refund transaction id={} succeeded; cumulative refunded={} of debit={} for orderId={}",
                 refund.getId(), projectedRefundTotal, debitAmount, dto.getOrderId());

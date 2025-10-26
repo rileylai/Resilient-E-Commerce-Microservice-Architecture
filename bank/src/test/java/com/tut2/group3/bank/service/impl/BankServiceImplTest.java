@@ -31,6 +31,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -44,6 +45,8 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class BankServiceImplTest {
+
+    private static final String STORE_USER_ID = "2";
 
     @Mock
     private TransactionRepository transactionRepository;
@@ -69,10 +72,11 @@ class BankServiceImplTest {
         Transaction debit = debitTransaction("order-123", "user-1", "AUD", new BigDecimal("100.00"));
         Transaction priorRefund = refundTransaction("order-123", "user-1", "AUD", new BigDecimal("30.00"));
         Account account = account("user-1", "AUD", new BigDecimal("50.00"));
+        Account storeAccount = account(STORE_USER_ID, "AUD", new BigDecimal("200.00"));
 
         when(transactionRepository.selectOne(any())).thenReturn(null);
         when(transactionRepository.selectList(any())).thenReturn(List.of(debit, priorRefund));
-        when(accountMapper.selectOne(any())).thenReturn(account);
+        mockAccountLookups(() -> account, () -> storeAccount);
         when(accountMapper.updateById(any(Account.class))).thenReturn(1);
 
         doAnswer(invocation -> {
@@ -87,9 +91,10 @@ class BankServiceImplTest {
         assertNotNull(result.getData());
         assertEquals(TransactionStatus.SUCCEEDED, result.getData().getStatus());
         assertEquals(0, account.getBalance().compareTo(new BigDecimal("70.00")));
+        assertEquals(0, storeAccount.getBalance().compareTo(new BigDecimal("180.00")));
 
         verify(transactionRepository).insert(any(Transaction.class));
-        verify(accountMapper).updateById(any(Account.class));
+        verify(accountMapper, times(2)).updateById(any(Account.class));
         verify(bankEventPublisher).publishTransactionResult(any(Transaction.class));
     }
 
@@ -122,11 +127,12 @@ class BankServiceImplTest {
 
         Transaction debit = debitTransaction("order-789", "user-3", "AUD", new BigDecimal("100.00"));
         Account account = account("user-3", "AUD", new BigDecimal("60.00"));
+        Account storeAccount = account(STORE_USER_ID, "AUD", new BigDecimal("150.00"));
         AtomicReference<Transaction> stored = new AtomicReference<>();
 
         when(transactionRepository.selectOne(any())).thenAnswer(invocation -> stored.get());
         when(transactionRepository.selectList(any())).thenReturn(List.of(debit));
-        when(accountMapper.selectOne(any())).thenReturn(account);
+        mockAccountLookups(() -> account, () -> storeAccount);
         when(accountMapper.updateById(any(Account.class))).thenReturn(1);
 
         doAnswer(invocation -> {
@@ -146,7 +152,7 @@ class BankServiceImplTest {
         assertEquals(firstResult.getData().getId(), secondResult.getData().getId());
 
         verify(transactionRepository).insert(any(Transaction.class));
-        verify(accountMapper).updateById(any(Account.class));
+        verify(accountMapper, times(2)).updateById(any(Account.class));
         verify(bankEventPublisher, times(1)).publishTransactionResult(any(Transaction.class));
         verify(bankEventPublisher, times(1)).publishTransactionResult(any(Transaction.class), anyBoolean());
     }
@@ -159,7 +165,9 @@ class BankServiceImplTest {
 
         when(transactionRepository.selectOne(any())).thenAnswer(invocation -> stored.get());
         when(transactionRepository.selectList(any())).thenAnswer(invocation -> new ArrayList<>(List.of(debit)));
-        when(accountMapper.selectOne(any())).thenAnswer(invocation -> account("user-5", "AUD", new BigDecimal("80.00")));
+        mockAccountLookups(
+                () -> account("user-5", "AUD", new BigDecimal("80.00")),
+                () -> account(STORE_USER_ID, "AUD", new BigDecimal("250.00")));
         when(accountMapper.updateById(any(Account.class))).thenReturn(1);
 
         doAnswer(invocation -> {
@@ -197,7 +205,7 @@ class BankServiceImplTest {
             executorService.shutdown();
         }
 
-        verify(accountMapper, times(1)).updateById(any(Account.class));
+        verify(accountMapper, times(2)).updateById(any(Account.class));
         verify(bankEventPublisher, times(1)).publishTransactionResult(any(Transaction.class));
         verify(bankEventPublisher, times(1)).publishTransactionResult(any(Transaction.class), anyBoolean());
     }
@@ -230,6 +238,30 @@ class BankServiceImplTest {
         transaction.setCurrency(currency);
         transaction.setCreatedAt(LocalDateTime.now().minusMinutes(2));
         return transaction;
+    }
+
+    private void mockAccountLookups(Supplier<Account> customerSupplier,
+                                    Supplier<Account> storeSupplier) {
+        ThreadLocal<Integer> callCounter = ThreadLocal.withInitial(() -> 0);
+        when(accountMapper.selectOne(any())).thenAnswer(invocation ->
+                selectAccount(callCounter, customerSupplier, storeSupplier));
+    }
+
+    private Account selectAccount(ThreadLocal<Integer> callCounter,
+                                  Supplier<Account> customerSupplier,
+                                  Supplier<Account> storeSupplier) {
+        int current = callCounter.get();
+        callCounter.set(current + 1);
+        try {
+            if (current % 2 == 0) {
+                return customerSupplier != null ? customerSupplier.get() : null;
+            }
+            return storeSupplier != null ? storeSupplier.get() : null;
+        } finally {
+            if ((current + 1) % 2 == 0) {
+                callCounter.remove();
+            }
+        }
     }
 
     private Account account(String userId, String currency, BigDecimal balance) {

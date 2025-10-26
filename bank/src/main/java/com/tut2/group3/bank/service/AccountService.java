@@ -8,9 +8,9 @@ public interface AccountService {
 
     Result<AccountResponseDTO> createAccount(AccountRequestDTO dto);
 
-    Result<AccountResponseDTO> getAccount(String userId);
+    Result<AccountResponseDTO> getAccount(String userId, String currency);
 
-    Result<AccountResponseDTO> updateAccount(String userId, AccountRequestDTO dto);
+    Result<AccountResponseDTO> updateAccount(String userId, String currency, AccountRequestDTO dto);
 
-    Result<Void> deleteAccount(String userId);
+    Result<Void> deleteAccount(String userId, String currency);
 }

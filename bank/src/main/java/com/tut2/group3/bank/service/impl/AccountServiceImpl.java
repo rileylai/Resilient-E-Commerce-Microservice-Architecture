@@ -28,33 +28,35 @@ public class AccountServiceImpl implements AccountService {
     @Override
     @Transactional
     public Result<AccountResponseDTO> createAccount(AccountRequestDTO dto) {
-        log.info("Creating account for userId={}", dto.getUserId());
+        log.info("Creating account for userId={} currency={}", dto.getUserId(), dto.getCurrency());
 
-        if (existsByUserId(dto.getUserId())) {
-            return Result.error(ErrorCode.BAD_REQUEST, "Account already exists for user " + dto.getUserId());
+        if (existsByUserIdAndCurrency(dto.getUserId(), dto.getCurrency())) {
+            return Result.error(ErrorCode.BAD_REQUEST,
+                    String.format("Account already exists for user %s in currency %s",
+                            dto.getUserId(), dto.getCurrency()));
         }
 
         Account account = modelMapper.map(dto, Account.class);
         account.setCreatedAt(LocalDateTime.now());
 
         accountMapper.insert(account);
-        log.info("Account created for userId={}", dto.getUserId());
+        log.info("Account created for userId={} currency={}", dto.getUserId(), dto.getCurrency());
 
         return Result.success(modelMapper.map(account, AccountResponseDTO.class));
     }
 
     @Override
-    public Result<AccountResponseDTO> getAccount(String userId) {
-        Account account = findAccountByUserIdOrThrow(userId);
+    public Result<AccountResponseDTO> getAccount(String userId, String currency) {
+        Account account = findAccountByUserIdAndCurrencyOrThrow(userId, currency);
         return Result.success(modelMapper.map(account, AccountResponseDTO.class));
     }
 
     @Override
     @Transactional
-    public Result<AccountResponseDTO> updateAccount(String userId, AccountRequestDTO dto) {
-        log.info("Updating account for userId={}", userId);
+    public Result<AccountResponseDTO> updateAccount(String userId, String currency, AccountRequestDTO dto) {
+        log.info("Updating account for userId={} currency={}", userId, currency);
 
-        Account account = findAccountByUserIdOrThrow(userId);
+        Account account = findAccountByUserIdAndCurrencyOrThrow(userId, currency);
 
         account.setBalance(dto.getBalance());
         account.setCurrency(dto.getCurrency());
@@ -65,27 +67,30 @@ public class AccountServiceImpl implements AccountService {
 
     @Override
     @Transactional
-    public Result<Void> deleteAccount(String userId) {
-        log.info("Deleting account for userId={}", userId);
+    public Result<Void> deleteAccount(String userId, String currency) {
+        log.info("Deleting account for userId={} currency={}", userId, currency);
 
-        Account account = findAccountByUserIdOrThrow(userId);
+        Account account = findAccountByUserIdAndCurrencyOrThrow(userId, currency);
         accountMapper.deleteById(account.getId());
 
         return Result.success();
     }
 
-    private boolean existsByUserId(String userId) {
+    private boolean existsByUserIdAndCurrency(String userId, String currency) {
         return accountMapper.selectCount(new LambdaQueryWrapper<Account>()
-                .eq(Account::getUserId, userId)) > 0;
+                .eq(Account::getUserId, userId)
+                .eq(Account::getCurrency, currency)) > 0;
     }
 
-    private Account findAccountByUserIdOrThrow(String userId) {
+    private Account findAccountByUserIdAndCurrencyOrThrow(String userId, String currency) {
         Account account = accountMapper.selectOne(new LambdaQueryWrapper<Account>()
                 .eq(Account::getUserId, userId)
-                .last("limit 1"));
+                .eq(Account::getCurrency, currency)
+                .last("LIMIT 1"));
 
         if (account == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "Account not found for user " + userId);
+            throw new BusinessException(ErrorCode.NOT_FOUND,
+                    String.format("Account not found for user %s and currency %s", userId, currency));
         }
         return account;
     }

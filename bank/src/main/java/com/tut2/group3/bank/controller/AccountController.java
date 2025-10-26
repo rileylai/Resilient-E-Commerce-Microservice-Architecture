@@ -26,26 +26,29 @@ public class AccountController {
 
     @PostMapping
     public Result<AccountResponseDTO> createAccount(@Valid @RequestBody AccountRequestDTO dto) {
-        log.info("REST call to create account for userId={}", dto.getUserId());
+        log.info("REST call to create account for userId={} currency={}", dto.getUserId(), dto.getCurrency());
         return accountService.createAccount(dto);
     }
 
-    @GetMapping("/{userId}")
-    public Result<AccountResponseDTO> getAccount(@PathVariable String userId) {
-        log.info("REST call to get account for userId={}", userId);
-        return accountService.getAccount(userId);
+    @GetMapping("/{userId}/{currency}")
+    public Result<AccountResponseDTO> getAccount(@PathVariable String userId,
+                                                 @PathVariable String currency) {
+        log.info("REST call to get account for userId={} currency={}", userId, currency);
+        return accountService.getAccount(userId, currency);
     }
 
-    @PutMapping("/{userId}")
+    @PutMapping("/{userId}/{currency}")
     public Result<AccountResponseDTO> updateAccount(@PathVariable String userId,
+                                                    @PathVariable String currency,
                                                     @Valid @RequestBody AccountRequestDTO dto) {
-        log.info("REST call to update account for userId={}", userId);
-        return accountService.updateAccount(userId, dto);
+        log.info("REST call to update account for userId={} currency={}", userId, currency);
+        return accountService.updateAccount(userId, currency, dto);
     }
 
-    @DeleteMapping("/{userId}")
-    public Result<Void> deleteAccount(@PathVariable String userId) {
-        log.info("REST call to delete account for userId={}", userId);
-        return accountService.deleteAccount(userId);
+    @DeleteMapping("/{userId}/{currency}")
+    public Result<Void> deleteAccount(@PathVariable String userId,
+                                      @PathVariable String currency) {
+        log.info("REST call to delete account for userId={} currency={}", userId, currency);
+        return accountService.deleteAccount(userId, currency);
     }
 }
