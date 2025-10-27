@@ -22,7 +22,7 @@ public class EmailServiceApplication {
         SpringApplication.run(EmailServiceApplication.class, args);
 
         System.out.println("════════════════════════════════════════════════════════════");
-        System.out.println("EmailService is running on port 8084");
+        System.out.println("EmailService is running");
         System.out.println("════════════════════════════════════════════════════════════");
     }
 }
