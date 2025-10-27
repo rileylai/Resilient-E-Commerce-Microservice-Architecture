@@ -27,7 +27,7 @@ public class DeliveryStatusListener {
     @RabbitListener(queues = RabbitMQConfig.DELIVERY_STATUS_QUEUE)
     public void handleDeliveryStatusUpdate(DeliveryStatusUpdateDTO statusUpdate) {
         log.info("----------------------------------------------------------------");
-        log.info("📦 Delivery Status Update Received");
+        log.info("Delivery Status Update Received");
         log.info("Order ID: {}", statusUpdate.getOrderId());
         log.info("New Status: {}", statusUpdate.getNewStatus());
         log.info("Customer: {}", statusUpdate.getCustomerEmail());
@@ -54,11 +54,11 @@ public class DeliveryStatusListener {
                     statusUpdate.getMessage()
             );
 
-            log.info("✓ Successfully processed delivery status update for order: {}", 
+            log.info("Successfully processed delivery status update for order: {}", 
                     statusUpdate.getOrderId());
 
         } catch (Exception e) {
-            log.error("❌ Failed to process delivery status update for order {}: {}", 
+            log.error("Failed to process delivery status update for order {}: {}", 
                     statusUpdate.getOrderId(), e.getMessage(), e);
             // Note: In production, you might want to implement retry logic or dead letter queue
         }

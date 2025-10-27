@@ -74,19 +74,19 @@ public class OrderServiceImpl implements OrderService {
                 sendOrderFailureNotification(null, user.getEmail(), "Insufficient inventory", errorMessage);
                 return Result.error(400, errorMessage);
             }
-            log.info("✓ Inventory validation successful");
+            log.info("Inventory validation successful");
 
             // Step 2: Check stock availability and get warehouse allocation
             log.info("Step 2: Checking stock availability...");
             Map<Long, StockAvailabilityResponse> stockAvailability = checkStockAvailability(orderCreateRequestDTO);
-            log.info("✓ Stock availability confirmed");
+            log.info("Stock availability confirmed");
 
             // Step 3: Create order in database
             log.info("Step 3: Creating order in database...");
             OrderResponseDto orderResponse = createOrder(orderCreateRequestDTO, user);
             order = orderMapper.selectById(orderResponse.getOrderId());
-            log.info("✓ Order created with ID: {}", order.getId());
-            log.info("📊 Order Status: {} → {}", "NEW", order.getStatus());
+            log.info("Order created with ID: {}", order.getId());
+            log.info("Order Status: {} -> {}", "NEW", order.getStatus());
 
             // Step 4: Reserve stock in warehouse
             log.info("Step 4: Reserving stock in warehouse...");
@@ -95,8 +95,8 @@ public class OrderServiceImpl implements OrderService {
             String oldStatus1 = order.getStatus();
             order.setStatus("PENDING_PAYMENT");
             orderMapper.updateById(order);
-            log.info("✓ Stock reserved with reservation ID: {}", reservationId);
-            log.info("📊 Order Status: {} → PENDING_PAYMENT", oldStatus1);
+            log.info("Stock reserved with reservation ID: {}", reservationId);
+            log.info("Order Status: {} -> PENDING_PAYMENT", oldStatus1);
 
             // Step 5: Process payment through bank
             log.info("Step 5: Processing payment through bank...");
@@ -109,7 +109,7 @@ public class OrderServiceImpl implements OrderService {
                 String oldStatus2 = order.getStatus();
                 order.setStatus("FAILED");
                 orderMapper.updateById(order);
-                log.error("📊 Order Status: {} → FAILED (Reason: Payment failed)", oldStatus2);
+                log.error("Order Status: {} -> FAILED (Reason: Payment failed)", oldStatus2);
                 sendOrderFailureNotification(order.getId(), user.getEmail(), "Payment failed", paymentResult.getMessage());
                 return Result.error(400, "Payment failed: " + paymentResult.getMessage());
             }
@@ -119,8 +119,8 @@ public class OrderServiceImpl implements OrderService {
             String oldStatus3 = order.getStatus();
             order.setStatus("PAYMENT_SUCCESSFUL");
             orderMapper.updateById(order);
-            log.info("✓ Payment successful. Transaction ID: {}", paymentResult.getData().getId());
-            log.info("📊 Order Status: {} → PAYMENT_SUCCESSFUL", oldStatus3);
+            log.info("Payment successful. Transaction ID: {}", paymentResult.getData().getId());
+            log.info("Order Status: {} -> PAYMENT_SUCCESSFUL", oldStatus3);
 
             // Step 6: Send delivery request to DeliveryCo
             log.info("Step 6: Sending delivery request to DeliveryCo...");
@@ -129,14 +129,14 @@ public class OrderServiceImpl implements OrderService {
             String oldStatus4 = order.getStatus();
             order.setStatus("DELIVERY_REQUESTED");
             orderMapper.updateById(order);
-            log.info("✓ Delivery request sent successfully");
-            log.info("📊 Order Status: {} → DELIVERY_REQUESTED", oldStatus4);
+            log.info("Delivery request sent successfully");
+            log.info("Order Status: {} -> DELIVERY_REQUESTED", oldStatus4);
 
             // Step 7: Confirm reservation with warehouse
             log.info("Step 7: Confirming reservation with warehouse...");
             confirmReservation(String.valueOf(order.getId()), reservationId);
-            log.info("✓ Reservation confirmed");
-            log.info("⏳ Order status will be updated by DeliveryCo via message queue");
+            log.info("Reservation confirmed");
+            log.info("Order status will be updated by DeliveryCo via message queue");
 
             log.info("════════════════════════════════════════════════════════════");
             log.info("Order placement completed successfully!");
@@ -170,7 +170,7 @@ public class OrderServiceImpl implements OrderService {
                     String oldStatusException = order.getStatus();
                     order.setStatus("FAILED");
                     orderMapper.updateById(order);
-                    log.error("📊 Order Status: {} → FAILED (Reason: Exception occurred)", oldStatusException);
+                    log.error("Order Status: {} -> FAILED (Reason: Exception occurred)", oldStatusException);
                     
                     // Send failure notification
                     sendOrderFailureNotification(order.getId(), user.getEmail(), "Order processing failed", e.getMessage());
@@ -230,7 +230,7 @@ public class OrderServiceImpl implements OrderService {
             if (order.getReservationId() != null) {
                 log.info("Releasing reserved stock...");
                 releaseReservedStock(String.valueOf(order.getId()), order.getReservationId(), "Order cancelled by customer");
-                log.info("✓ Stock released successfully");
+                log.info("Stock released successfully");
             }
             
             // Process refund if payment was made
@@ -242,7 +242,7 @@ public class OrderServiceImpl implements OrderService {
                     log.error("Refund failed: {}", refundResult.getMessage());
                     return Result.error(400, "Refund failed: " + refundResult.getMessage());
                 }
-                log.info("✓ Refund processed successfully");
+                log.info("Refund processed successfully");
                 
                 // Send refund notification
                 RefundNotificationDto refundNotification = RefundNotificationDto.builder()
@@ -253,7 +253,7 @@ public class OrderServiceImpl implements OrderService {
                         .reason("Order cancelled by customer")
                         .build();
                 messagePublisher.publishRefundNotification(refundNotification);
-                log.info("✓ Refund notification sent");
+                log.info("Refund notification sent");
             }
             
             // Update order status
@@ -261,7 +261,7 @@ public class OrderServiceImpl implements OrderService {
             order.setStatus("CANCELLED");
             order.setUpdateTime(LocalDateTime.now());
             orderMapper.updateById(order);
-            log.info("📊 Order Status: {} → CANCELLED", oldStatusCancel);
+            log.info("Order Status: {} -> CANCELLED", oldStatusCancel);
             
             log.info("════════════════════════════════════════════════════════════");
             log.info("Order cancellation completed successfully!");
@@ -376,7 +376,7 @@ public class OrderServiceImpl implements OrderService {
             switch (deliveryStatus) {
                 case "REQUEST_RECEIVED":
                     // Delivery request confirmed by DeliveryCo
-                    log.info("📊 Order Status: {} (DeliveryCo confirmed request)", oldStatus);
+                    log.info("Order Status: {} (DeliveryCo confirmed request)", oldStatus);
                     break;
                     
                 case "PICKED_UP":
@@ -384,7 +384,7 @@ public class OrderServiceImpl implements OrderService {
                     order.setStatus("PICKED_UP");
                     order.setUpdateTime(LocalDateTime.now());
                     orderMapper.updateById(order);
-                    log.info("📊 Order Status: {} → PICKED_UP", oldStatus);
+                    log.info("Order Status: {} -> PICKED_UP", oldStatus);
                     break;
                     
                 case "IN_TRANSIT":
@@ -392,7 +392,7 @@ public class OrderServiceImpl implements OrderService {
                     order.setStatus("IN_TRANSIT");
                     order.setUpdateTime(LocalDateTime.now());
                     orderMapper.updateById(order);
-                    log.info("📊 Order Status: {} → IN_TRANSIT", oldStatus);
+                    log.info("Order Status: {} -> IN_TRANSIT", oldStatus);
                     break;
                     
                 case "DELIVERED":
@@ -400,12 +400,12 @@ public class OrderServiceImpl implements OrderService {
                     order.setStatus("DELIVERED");
                     order.setUpdateTime(LocalDateTime.now());
                     orderMapper.updateById(order);
-                    log.info("📊 Order Status: {} → DELIVERED ✅", oldStatus);
+                    log.info("Order Status: {} -> DELIVERED", oldStatus);
                     break;
                     
                 case "LOST":
                     // Package lost during delivery - need to handle refund
-                    log.warn("⚠️ Package lost for order: {}", orderId);
+                    log.warn("Package lost for order: {}", orderId);
                     
                     // Get user information for refund
                     User user = userMapper.selectById(order.getUserId());
@@ -420,7 +420,7 @@ public class OrderServiceImpl implements OrderService {
                         Result<TransactionDto> refundResult = processRefund(order, user);
                         
                         if (refundResult.getCode() == 200) {
-                            log.info("✓ Refund processed successfully");
+                            log.info("Refund processed successfully");
                             // Send refund notification
                             RefundNotificationDto refundNotification = RefundNotificationDto.builder()
                                     .orderId(order.getId())
@@ -430,9 +430,9 @@ public class OrderServiceImpl implements OrderService {
                                     .reason("Package lost during delivery")
                                     .build();
                             messagePublisher.publishRefundNotification(refundNotification);
-                            log.info("✓ Refund notification sent");
+                            log.info("Refund notification sent");
                         } else {
-                            log.error("❌ Refund failed: {}", refundResult.getMessage());
+                            log.error("Refund failed: {}", refundResult.getMessage());
                             // Send notification to customer service for manual handling
                             sendOrderFailureNotification(order.getId(), user.getEmail(), 
                                 "Package lost - refund failed", 
@@ -444,7 +444,7 @@ public class OrderServiceImpl implements OrderService {
                     order.setStatus("LOST");
                     order.setUpdateTime(LocalDateTime.now());
                     orderMapper.updateById(order);
-                    log.info("📊 Order Status: {} → LOST", oldStatus);
+                    log.info("Order Status: {} -> LOST", oldStatus);
                     break;
                     
                 default:
