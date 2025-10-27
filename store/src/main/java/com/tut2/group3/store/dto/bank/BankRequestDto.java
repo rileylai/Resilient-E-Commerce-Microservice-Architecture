@@ -24,4 +24,7 @@ public class BankRequestDto {
     @NotBlank
     private String currency;
 
+    // Idempotency key for refund operations to prevent duplicate refunds
+    private String idempotencyKey;
+
 }

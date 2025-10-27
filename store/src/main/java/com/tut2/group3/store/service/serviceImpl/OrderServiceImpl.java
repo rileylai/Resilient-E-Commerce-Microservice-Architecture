@@ -495,6 +495,8 @@ public class OrderServiceImpl implements OrderService {
         refundRequest.setUserId(String.valueOf(user.getId()));
         refundRequest.setAmount(BigDecimal.valueOf(order.getTotalAmount()));
         refundRequest.setCurrency("AUD");
+        // Set idempotency key to prevent duplicate refunds for the same order
+        refundRequest.setIdempotencyKey("REFUND-" + order.getId());
 
         return bankClient.handleRefund(refundRequest);
     }
