@@ -4,6 +4,8 @@ import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
+import java.util.TimeZone;
+
 @SpringBootApplication
 @MapperScan({"com.tut2.group3.bank.repository", "com.tut2.group3.bank.mapper"})
 public class BankApplication {
@@ -18,6 +20,8 @@ public class BankApplication {
 
 
     public static void main(String[] args) {
+        // Set default timezone to Australia/Sydney for consistent time handling
+        TimeZone.setDefault(TimeZone.getTimeZone("Australia/Sydney"));
         SpringApplication.run(BankApplication.class, args);
     }
 

@@ -2,3 +2,30 @@
 .idea/
 .vscode/
 .history/
+
+# Configuration files - ignore local configurations
+**/application.properties
+**/application.yml
+**/application.yaml
+**/application-*.properties
+**/application-*.yml
+**/application-*.yaml
+
+# Log files
+logs/
+*.log
+
+# Build outputs
+target/
+build/
+out/
+
+# Database
+*.db
+*.sqlite
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
