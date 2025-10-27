@@ -1,5 +1,6 @@
 package com.tut2.group3.store.client;
 
+import com.tut2.group3.store.config.BankClientConfiguration;
 import com.tut2.group3.store.dto.bank.AccountRequestDto;
 import com.tut2.group3.store.dto.bank.AccountResponseDto;
 import com.tut2.group3.store.dto.bank.BankRequestDto;
@@ -9,7 +10,7 @@ import jakarta.validation.Valid;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.*;
 
-@FeignClient(name = "bank", url = "http://localhost:8084")
+@FeignClient(name = "bank", url = "http://localhost:8084", configuration = BankClientConfiguration.class)
 public interface BankClient {
 
     /**

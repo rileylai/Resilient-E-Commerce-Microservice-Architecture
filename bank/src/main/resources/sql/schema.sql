@@ -1,9 +1,12 @@
 -- Database schema for Bank microservice
-CREATE DATABASE IF NOT EXISTS `5348_bank_service_db` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE `5348_bank_service_db`;
+-- This script drops and recreates tables to ensure clean test data on each startup
+
+-- Drop tables if they exist (reverse order due to potential foreign keys)
+DROP TABLE IF EXISTS transactions;
+DROP TABLE IF EXISTS accounts;
 
 -- Create accounts table for Bank microservice
-CREATE TABLE IF NOT EXISTS accounts (
+CREATE TABLE accounts (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     user_id VARCHAR(64) NOT NULL,
     balance DECIMAL(19,4) NOT NULL DEFAULT 0.0000,
@@ -15,7 +18,7 @@ CREATE TABLE IF NOT EXISTS accounts (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Create transactions table for Bank microservice
-CREATE TABLE IF NOT EXISTS transactions (
+CREATE TABLE transactions (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     order_id VARCHAR(64) NOT NULL,
     user_id VARCHAR(64) NOT NULL,
