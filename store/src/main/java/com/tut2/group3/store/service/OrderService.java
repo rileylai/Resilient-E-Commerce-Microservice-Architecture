@@ -32,4 +32,15 @@ public interface OrderService {
      * Get all orders for a user
      */
     Result getOrdersByUserId(Long userId);
+
+    /**
+     * Update order delivery status based on DeliveryCo status update
+     * - Updates order status field
+     * - Handles special cases (DELIVERED, LOST)
+     * 
+     * @param orderId Order ID
+     * @param deliveryStatus New delivery status from DeliveryCo
+     * @param message Additional message about status update
+     */
+    void updateDeliveryStatus(Long orderId, String deliveryStatus, String message);
 }

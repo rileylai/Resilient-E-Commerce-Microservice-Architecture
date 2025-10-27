@@ -8,6 +8,11 @@ CREATE TABLE IF NOT EXISTS users (
     UNIQUE KEY `uk_user_name` (`user_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Drop order tables if they exist (for clean testing)
+-- Note: Must drop order_item first due to foreign key constraint
+DROP TABLE IF EXISTS order_item;
+DROP TABLE IF EXISTS orders;
+
 -- orders
 CREATE TABLE IF NOT EXISTS orders (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

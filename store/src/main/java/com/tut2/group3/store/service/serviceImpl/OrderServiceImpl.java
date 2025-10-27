@@ -86,14 +86,17 @@ public class OrderServiceImpl implements OrderService {
             OrderResponseDto orderResponse = createOrder(orderCreateRequestDTO, user);
             order = orderMapper.selectById(orderResponse.getOrderId());
             log.info("✓ Order created with ID: {}", order.getId());
+            log.info("📊 Order Status: {} → {}", "NEW", order.getStatus());
 
             // Step 4: Reserve stock in warehouse
             log.info("Step 4: Reserving stock in warehouse...");
             reservationId = reserveStock(order, orderCreateRequestDTO, stockAvailability);
             order.setReservationId(reservationId);
+            String oldStatus1 = order.getStatus();
             order.setStatus("PENDING_PAYMENT");
             orderMapper.updateById(order);
             log.info("✓ Stock reserved with reservation ID: {}", reservationId);
+            log.info("📊 Order Status: {} → PENDING_PAYMENT", oldStatus1);
 
             // Step 5: Process payment through bank
             log.info("Step 5: Processing payment through bank...");
@@ -103,33 +106,37 @@ public class OrderServiceImpl implements OrderService {
                 log.error("Payment failed: {}", paymentResult.getMessage());
                 // Release reserved stock
                 releaseReservedStock(String.valueOf(order.getId()), reservationId, "Payment failed");
+                String oldStatus2 = order.getStatus();
                 order.setStatus("FAILED");
                 orderMapper.updateById(order);
+                log.error("📊 Order Status: {} → FAILED (Reason: Payment failed)", oldStatus2);
                 sendOrderFailureNotification(order.getId(), user.getEmail(), "Payment failed", paymentResult.getMessage());
                 return Result.error(400, "Payment failed: " + paymentResult.getMessage());
             }
             
             paymentProcessed = true;
             order.setTransactionId(String.valueOf(paymentResult.getData().getId()));
+            String oldStatus3 = order.getStatus();
             order.setStatus("PAYMENT_SUCCESSFUL");
             orderMapper.updateById(order);
             log.info("✓ Payment successful. Transaction ID: {}", paymentResult.getData().getId());
+            log.info("📊 Order Status: {} → PAYMENT_SUCCESSFUL", oldStatus3);
 
             // Step 6: Send delivery request to DeliveryCo
             log.info("Step 6: Sending delivery request to DeliveryCo...");
             DeliveryRequestDto deliveryRequest = buildDeliveryRequest(order, orderCreateRequestDTO, user, stockAvailability);
             messagePublisher.publishDeliveryRequest(deliveryRequest);
+            String oldStatus4 = order.getStatus();
             order.setStatus("DELIVERY_REQUESTED");
             orderMapper.updateById(order);
             log.info("✓ Delivery request sent successfully");
+            log.info("📊 Order Status: {} → DELIVERY_REQUESTED", oldStatus4);
 
             // Step 7: Confirm reservation with warehouse
             log.info("Step 7: Confirming reservation with warehouse...");
             confirmReservation(String.valueOf(order.getId()), reservationId);
-            order.setStatus("COMPLETED");
-            order.setUpdateTime(LocalDateTime.now());
-            orderMapper.updateById(order);
             log.info("✓ Reservation confirmed");
+            log.info("⏳ Order status will be updated by DeliveryCo via message queue");
 
             log.info("════════════════════════════════════════════════════════════");
             log.info("Order placement completed successfully!");
@@ -160,8 +167,10 @@ public class OrderServiceImpl implements OrderService {
                     }
                     
                     // Update order status
+                    String oldStatusException = order.getStatus();
                     order.setStatus("FAILED");
                     orderMapper.updateById(order);
+                    log.error("📊 Order Status: {} → FAILED (Reason: Exception occurred)", oldStatusException);
                     
                     // Send failure notification
                     sendOrderFailureNotification(order.getId(), user.getEmail(), "Order processing failed", e.getMessage());
@@ -195,7 +204,11 @@ public class OrderServiceImpl implements OrderService {
             }
             
             // Check if order can be cancelled
-            if ("DELIVERY_REQUESTED".equals(order.getStatus()) || "COMPLETED".equals(order.getStatus())) {
+            // Once delivery request is sent (DELIVERY_REQUESTED or any delivery status), order cannot be cancelled
+            if ("DELIVERY_REQUESTED".equals(order.getStatus()) || 
+                "PICKED_UP".equals(order.getStatus()) || 
+                "IN_TRANSIT".equals(order.getStatus()) || 
+                "DELIVERED".equals(order.getStatus())) {
                 return Result.error(400, "Order cannot be cancelled after delivery request has been sent");
             }
             
@@ -244,9 +257,11 @@ public class OrderServiceImpl implements OrderService {
             }
             
             // Update order status
+            String oldStatusCancel = order.getStatus();
             order.setStatus("CANCELLED");
             order.setUpdateTime(LocalDateTime.now());
             orderMapper.updateById(order);
+            log.info("📊 Order Status: {} → CANCELLED", oldStatusCancel);
             
             log.info("════════════════════════════════════════════════════════════");
             log.info("Order cancellation completed successfully!");
@@ -341,6 +356,105 @@ public class OrderServiceImpl implements OrderService {
         } catch (Exception e) {
             log.error("Failed to get orders for user {}: {}", userId, e.getMessage(), e);
             return Result.error(500, "Failed to get orders: " + e.getMessage());
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updateDeliveryStatus(Long orderId, String deliveryStatus, String message) {
+        try {
+            // Get order
+            Order order = orderMapper.selectById(orderId);
+            if (order == null) {
+                log.error("Order not found: {}", orderId);
+                return;
+            }
+            
+            String oldStatus = order.getStatus();
+            
+            // Update order status based on delivery status
+            switch (deliveryStatus) {
+                case "REQUEST_RECEIVED":
+                    // Delivery request confirmed by DeliveryCo
+                    log.info("📊 Order Status: {} (DeliveryCo confirmed request)", oldStatus);
+                    break;
+                    
+                case "PICKED_UP":
+                    // Package picked up from warehouse
+                    order.setStatus("PICKED_UP");
+                    order.setUpdateTime(LocalDateTime.now());
+                    orderMapper.updateById(order);
+                    log.info("📊 Order Status: {} → PICKED_UP", oldStatus);
+                    break;
+                    
+                case "IN_TRANSIT":
+                    // Package is on the delivery truck
+                    order.setStatus("IN_TRANSIT");
+                    order.setUpdateTime(LocalDateTime.now());
+                    orderMapper.updateById(order);
+                    log.info("📊 Order Status: {} → IN_TRANSIT", oldStatus);
+                    break;
+                    
+                case "DELIVERED":
+                    // Package successfully delivered to customer
+                    order.setStatus("DELIVERED");
+                    order.setUpdateTime(LocalDateTime.now());
+                    orderMapper.updateById(order);
+                    log.info("📊 Order Status: {} → DELIVERED ✅", oldStatus);
+                    break;
+                    
+                case "LOST":
+                    // Package lost during delivery - need to handle refund
+                    log.warn("⚠️ Package lost for order: {}", orderId);
+                    
+                    // Get user information for refund
+                    User user = userMapper.selectById(order.getUserId());
+                    if (user == null) {
+                        log.error("User not found for order: {}", orderId);
+                        break;
+                    }
+                    
+                    // Process refund if payment was made
+                    if (order.getTransactionId() != null) {
+                        log.info("Processing refund for lost package...");
+                        Result<TransactionDto> refundResult = processRefund(order, user);
+                        
+                        if (refundResult.getCode() == 200) {
+                            log.info("✓ Refund processed successfully");
+                            // Send refund notification
+                            RefundNotificationDto refundNotification = RefundNotificationDto.builder()
+                                    .orderId(order.getId())
+                                    .customerEmail(user.getEmail())
+                                    .amount((double) order.getTotalAmount())
+                                    .timestamp(LocalDateTime.now())
+                                    .reason("Package lost during delivery")
+                                    .build();
+                            messagePublisher.publishRefundNotification(refundNotification);
+                            log.info("✓ Refund notification sent");
+                        } else {
+                            log.error("❌ Refund failed: {}", refundResult.getMessage());
+                            // Send notification to customer service for manual handling
+                            sendOrderFailureNotification(order.getId(), user.getEmail(), 
+                                "Package lost - refund failed", 
+                                "Please contact customer service. Refund error: " + refundResult.getMessage());
+                        }
+                    }
+                    
+                    // Update order status to LOST
+                    order.setStatus("LOST");
+                    order.setUpdateTime(LocalDateTime.now());
+                    orderMapper.updateById(order);
+                    log.info("📊 Order Status: {} → LOST", oldStatus);
+                    break;
+                    
+                default:
+                    log.warn("Unknown delivery status: {}", deliveryStatus);
+                    break;
+            }
+            
+        } catch (Exception e) {
+            log.error("Failed to update delivery status for order {}: {}", orderId, e.getMessage(), e);
+            throw e;
         }
     }
 

@@ -17,11 +17,13 @@ public class RabbitMQConfig {
 
     // ========== Queue Names ==========
     public static final String DELIVERY_REQUEST_QUEUE = "delivery.request.queue";
+    public static final String DELIVERY_STATUS_QUEUE = "delivery.status.queue";
     public static final String ORDER_FAILURE_QUEUE = "email.orderfail.queue";
     public static final String REFUND_NOTIFICATION_QUEUE = "email.refund.queue";
 
     // ========== Routing Keys ==========
     public static final String DELIVERY_REQUEST_ROUTING_KEY = "delivery.request";
+    public static final String DELIVERY_STATUS_ROUTING_KEY = "delivery.status.update";
     public static final String ORDER_FAILURE_ROUTING_KEY = "email.orderfail";
     public static final String REFUND_ROUTING_KEY = "email.refund";
 
@@ -58,6 +60,16 @@ public class RabbitMQConfig {
     }
 
     /**
+     * Queue for delivery status updates from DeliveryCo
+     */
+    @Bean
+    public Queue deliveryStatusQueue() {
+        return QueueBuilder
+                .durable(DELIVERY_STATUS_QUEUE)
+                .build();
+    }
+
+    /**
      * Queue for order failure notifications
      */
     @Bean
@@ -86,6 +98,17 @@ public class RabbitMQConfig {
                 .bind(deliveryRequestQueue)
                 .to(deliveryExchange)
                 .with(DELIVERY_REQUEST_ROUTING_KEY);
+    }
+
+    /**
+     * Bind delivery status queue to delivery exchange
+     */
+    @Bean
+    public Binding deliveryStatusBinding(Queue deliveryStatusQueue, TopicExchange deliveryExchange) {
+        return BindingBuilder
+                .bind(deliveryStatusQueue)
+                .to(deliveryExchange)
+                .with(DELIVERY_STATUS_ROUTING_KEY);
     }
 
     /**
