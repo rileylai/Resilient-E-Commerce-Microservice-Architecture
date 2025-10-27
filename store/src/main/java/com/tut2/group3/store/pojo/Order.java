@@ -20,7 +20,7 @@ public class Order {
 
     private Long userId;
     private String status; // PENDING_VALIDATION, PENDING_PAYMENT, PAYMENT_SUCCESSFUL, DELIVERY_REQUESTED, COMPLETED, CANCELLED, FAILED
-    private float totalAmount;
+    private double totalAmount;
     private String reservationId; // Warehouse reservation ID
     private String transactionId; // Bank transaction ID
     private LocalDateTime createTime;

@@ -13,7 +13,7 @@ public interface OrderService {
      * - Sends delivery request
      * - Confirms reservation
      */
-    Result orderPlace(@RequestBody OrderCreateRequestDTO orderCreateRequestDTO);
+    Result orderPlace(OrderCreateRequestDTO orderCreateRequestDTO);
 
     /**
      * Cancel an order before delivery request is sent

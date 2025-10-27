@@ -7,10 +7,184 @@
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 1200px;
-            margin: 20px auto;
-            padding: 20px;
+            margin: 0;
+            padding: 0;
             background-color: #f5f5f5;
+            display: flex;
+        }
+        
+        /* Order Monitor Sidebar */
+        #orderMonitor {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 350px;
+            height: 100vh;
+            background: linear-gradient(180deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            overflow-y: auto;
+            box-shadow: 4px 0 10px rgba(0,0,0,0.3);
+            z-index: 1000;
+            transition: transform 0.3s ease;
+        }
+        
+        #orderMonitor.collapsed {
+            transform: translateX(-310px);
+        }
+        
+        .monitor-header {
+            padding: 20px;
+            background: rgba(0,0,0,0.2);
+            border-bottom: 2px solid rgba(255,255,255,0.3);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        .monitor-header h3 {
+            margin: 0 0 10px 0;
+            font-size: 18px;
+        }
+        
+        .monitor-controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .monitor-controls input {
+            flex: 1;
+            padding: 5px 10px;
+            border-radius: 4px;
+            border: none;
+        }
+        
+        .monitor-controls button {
+            padding: 5px 10px;
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.5);
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        .monitor-controls button:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .toggle-monitor {
+            position: absolute;
+            right: -40px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #1e3c72;
+            color: white;
+            border: none;
+            padding: 15px 10px;
+            cursor: pointer;
+            border-radius: 0 8px 8px 0;
+            font-size: 20px;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.3);
+        }
+        
+        .monitor-status {
+            padding: 10px 20px;
+            font-size: 12px;
+            background: rgba(0,0,0,0.2);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .monitor-orders {
+            padding: 15px;
+        }
+        
+        .order-card {
+            background: rgba(255,255,255,0.1);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 12px;
+            border-left: 4px solid #ffc107;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .order-card:hover {
+            background: rgba(255,255,255,0.15);
+            transform: translateX(5px);
+        }
+        
+        .order-card.status-PENDING_VALIDATION { border-left-color: #17a2b8; }
+        .order-card.status-PENDING_PAYMENT { border-left-color: #ffc107; }
+        .order-card.status-PAYMENT_SUCCESSFUL { border-left-color: #28a745; }
+        .order-card.status-DELIVERY_REQUESTED { border-left-color: #007bff; }
+        .order-card.status-PICKED_UP { border-left-color: #6f42c1; }
+        .order-card.status-IN_TRANSIT { border-left-color: #fd7e14; }
+        .order-card.status-DELIVERED { border-left-color: #20c997; }
+        .order-card.status-CANCELLED { border-left-color: #dc3545; }
+        .order-card.status-FAILED { border-left-color: #e83e8c; }
+        .order-card.status-LOST { border-left-color: #6c757d; }
+        
+        .order-id {
+            font-weight: bold;
+            font-size: 16px;
+            margin-bottom: 5px;
+        }
+        
+        .order-status {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+            background: rgba(255,255,255,0.3);
+            margin-bottom: 5px;
+        }
+        
+        .order-amount {
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        
+        .order-time {
+            font-size: 11px;
+            opacity: 0.8;
+            margin-top: 5px;
+        }
+        
+        .no-orders {
+            text-align: center;
+            padding: 40px 20px;
+            opacity: 0.7;
+            font-style: italic;
+        }
+        
+        .refresh-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #28a745;
+            margin-left: 10px;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        
+        /* Main Content */
+        #mainContent {
+            flex: 1;
+            margin-left: 350px;
+            padding: 20px;
+            max-width: 1200px;
+            transition: margin-left 0.3s ease;
+        }
+        
+        #mainContent.expanded {
+            margin-left: 40px;
         }
         .container {
             background: white;
@@ -93,9 +267,34 @@
     </style>
 </head>
 <body>
-    <h1>Store API Client</h1>
+    <!-- Order Monitor Sidebar -->
+    <div id="orderMonitor">
+        <button class="toggle-monitor" onclick="toggleMonitor()" title="Toggle Monitor">◀</button>
+        
+        <div class="monitor-header">
+            <h3>📊 Order Monitor <span class="refresh-indicator"></span></h3>
+            <div class="monitor-controls">
+                <input type="number" id="monitorUserId" placeholder="User ID" value="1">
+                <button onclick="startMonitoring()">Start</button>
+                <button onclick="stopMonitoring()">Stop</button>
+            </div>
+        </div>
+        
+        <div class="monitor-status">
+            <div id="monitorStatusText">Click "Start" to begin monitoring</div>
+            <div id="monitorLastUpdate" style="margin-top: 5px; font-size: 11px;"></div>
+        </div>
+        
+        <div class="monitor-orders" id="monitorOrdersContainer">
+            <div class="no-orders">No orders to display</div>
+        </div>
+    </div>
     
-    <!-- Token Status -->
+    <!-- Main Content -->
+    <div id="mainContent">
+        <h1>Store API Client</h1>
+        
+        <!-- Token Status -->
     <div class="container">
         <div id="tokenStatus" class="token-status logged-out">
             <strong>Status:</strong> Not logged in
@@ -424,7 +623,185 @@
         
         // Initialize
         updateTokenStatus();
+        
+        // ============================================
+        // Order Monitor Functions
+        // ============================================
+        
+        let monitorInterval = null;
+        let isMonitoring = false;
+        
+        function toggleMonitor() {
+            const monitor = document.getElementById('orderMonitor');
+            const mainContent = document.getElementById('mainContent');
+            const toggleBtn = document.querySelector('.toggle-monitor');
+            
+            monitor.classList.toggle('collapsed');
+            mainContent.classList.toggle('expanded');
+            
+            if (monitor.classList.contains('collapsed')) {
+                toggleBtn.textContent = '▶';
+            } else {
+                toggleBtn.textContent = '◀';
+            }
+        }
+        
+        async function fetchUserOrders(userId) {
+            const result = await apiCall(`/order/user/${userId}`);
+            return result;
+        }
+        
+        function formatTime(dateString) {
+            if (!dateString) return 'N/A';
+            const date = new Date(dateString);
+            const now = new Date();
+            const diffMs = now - date;
+            const diffSecs = Math.floor(diffMs / 1000);
+            const diffMins = Math.floor(diffSecs / 60);
+            
+            if (diffSecs < 60) return `${diffSecs}s ago`;
+            if (diffMins < 60) return `${diffMins}m ago`;
+            
+            return date.toLocaleTimeString();
+        }
+        
+        function getStatusColor(status) {
+            const colors = {
+                'PENDING_VALIDATION': '🔵',
+                'PENDING_PAYMENT': '🟡',
+                'PAYMENT_SUCCESSFUL': '🟢',
+                'DELIVERY_REQUESTED': '🔷',
+                'PICKED_UP': '🟣',
+                'IN_TRANSIT': '🟠',
+                'DELIVERED': '✅',
+                'CANCELLED': '🔴',
+                'FAILED': '❌',
+                'LOST': '⚫'
+            };
+            return colors[status] || '⚪';
+        }
+        
+        function renderOrders(orders) {
+            const container = document.getElementById('monitorOrdersContainer');
+            
+            if (!orders || orders.length === 0) {
+                container.innerHTML = '<div class="no-orders">No orders found</div>';
+                return;
+            }
+            
+            // Sort orders by ID (newest first)
+            orders.sort((a, b) => b.orderId - a.orderId);
+            
+            const html = orders.map(order => `
+                <div class="order-card status-${order.status}" onclick="highlightOrder(${order.orderId})">
+                    <div class="order-id">
+                        ${getStatusColor(order.status)} Order #${order.orderId}
+                    </div>
+                    <div class="order-status">${order.status}</div>
+                    <div class="order-amount">💰 $${order.totalAmount.toFixed(2)}</div>
+                    <div class="order-time">🕐 ${formatTime(order.createTime)}</div>
+                </div>
+            `).join('');
+            
+            container.innerHTML = html;
+        }
+        
+        function highlightOrder(orderId) {
+            // Fill the "Get Order by ID" field and scroll to it
+            document.getElementById('getOrderId').value = orderId;
+            document.getElementById('getOrderId').focus();
+            
+            // Optionally auto-fetch the order
+            getOrderById();
+        }
+        
+        async function updateOrderMonitor() {
+            const userId = document.getElementById('monitorUserId').value;
+            
+            if (!userId) {
+                document.getElementById('monitorStatusText').textContent = '⚠️ Please enter a User ID';
+                return;
+            }
+            
+            try {
+                const result = await fetchUserOrders(userId);
+                
+                if (result.success && result.data && result.data.data) {
+                    const orders = result.data.data;
+                    renderOrders(orders);
+                    
+                    document.getElementById('monitorStatusText').textContent = 
+                        `✅ Monitoring User ${userId} - ${orders.length} order(s)`;
+                } else {
+                    renderOrders([]);
+                    document.getElementById('monitorStatusText').textContent = 
+                        `⚠️ No orders found for User ${userId}`;
+                }
+                
+                const now = new Date();
+                document.getElementById('monitorLastUpdate').textContent = 
+                    `Last updated: ${now.toLocaleTimeString()}`;
+                    
+            } catch (error) {
+                document.getElementById('monitorStatusText').textContent = 
+                    `❌ Error: ${error.message}`;
+            }
+        }
+        
+        function startMonitoring() {
+            const userId = document.getElementById('monitorUserId').value;
+            
+            if (!userId) {
+                alert('Please enter a User ID');
+                return;
+            }
+            
+            if (isMonitoring) {
+                stopMonitoring();
+            }
+            
+            isMonitoring = true;
+            document.getElementById('monitorStatusText').textContent = 
+                `🔄 Starting monitoring for User ${userId}...`;
+            
+            // Immediate first update
+            updateOrderMonitor();
+            
+            // Then update every 2 seconds
+            monitorInterval = setInterval(updateOrderMonitor, 500);
+            
+            console.log('Order monitoring started for User', userId);
+        }
+        
+        function stopMonitoring() {
+            if (monitorInterval) {
+                clearInterval(monitorInterval);
+                monitorInterval = null;
+            }
+            
+            isMonitoring = false;
+            document.getElementById('monitorStatusText').textContent = 
+                '⏸️ Monitoring stopped';
+            
+            console.log('Order monitoring stopped');
+        }
+        
+        // Auto-stop monitoring when page is hidden (browser tab switched)
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden && isMonitoring) {
+                console.log('Page hidden, pausing monitoring...');
+            } else if (!document.hidden && isMonitoring) {
+                console.log('Page visible, resuming monitoring...');
+                updateOrderMonitor();
+            }
+        });
+        
+        // Stop monitoring when page is about to unload
+        window.addEventListener('beforeunload', function() {
+            stopMonitoring();
+        });
     </script>
+    </div> <!-- End of mainContent -->
 </body>
 </html>
 

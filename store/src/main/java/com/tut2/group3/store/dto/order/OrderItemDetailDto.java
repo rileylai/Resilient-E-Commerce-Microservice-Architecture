@@ -11,6 +11,6 @@ public class OrderItemDetailDto {
     private long productId;
     private String productName;
     private int quantity;
-    private float price;
-    private float subTotal;
+    private double price;
+    private double subTotal;
 }

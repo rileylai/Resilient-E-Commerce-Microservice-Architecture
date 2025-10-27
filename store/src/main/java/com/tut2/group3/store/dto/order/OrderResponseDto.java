@@ -13,7 +13,7 @@ import java.util.List;
 public class OrderResponseDto {
     private Long orderId;
     private String status;
-    private float totalAmount;
+    private double totalAmount;
     private LocalDateTime createTime;
     private List<OrderItemDetailDto> items;
 }

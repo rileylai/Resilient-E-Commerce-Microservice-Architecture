@@ -13,6 +13,7 @@ import com.tut2.group3.store.dto.order.OrderItemDetailDto;
 import com.tut2.group3.store.dto.order.OrderItemRequestDTO;
 import com.tut2.group3.store.dto.order.OrderResponseDto;
 import com.tut2.group3.store.dto.warehouse.*;
+import com.tut2.group3.store.exception.BusinessException;
 import com.tut2.group3.store.mapper.OrderItemMapper;
 import com.tut2.group3.store.mapper.OrderMapper;
 import com.tut2.group3.store.mapper.UserMapper;
@@ -45,7 +46,6 @@ public class OrderServiceImpl implements OrderService {
     private final UserMapper userMapper;
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public Result orderPlace(OrderCreateRequestDTO orderCreateRequestDTO) {
         log.info("════════════════════════════════════════════════════════════");
         log.info("Starting order placement process for user: {}", orderCreateRequestDTO.getUserId());
@@ -80,57 +80,80 @@ public class OrderServiceImpl implements OrderService {
             log.info("Step 2: Checking stock availability...");
             Map<Long, StockAvailabilityResponse> stockAvailability = checkStockAvailability(orderCreateRequestDTO);
             log.info("Stock availability confirmed");
+            
+            // Delay for testing cancel functionality
+            log.info("Waiting 5 seconds before creating order...");
+            Thread.sleep(5000);
 
-            // Step 3: Create order in database
+            // Step 3: Create order in database (Independent transaction - immediately visible)
             log.info("Step 3: Creating order in database...");
-            OrderResponseDto orderResponse = createOrder(orderCreateRequestDTO, user);
+            OrderResponseDto orderResponse = createOrderTransaction(orderCreateRequestDTO, user);
             order = orderMapper.selectById(orderResponse.getOrderId());
             log.info("Order created with ID: {}", order.getId());
-            log.info("Order Status: {} -> {}", "NEW", order.getStatus());
+            log.info("Order Status: PENDING_VALIDATION (immediately visible for queries and cancel)");
+            
+            // Delay for testing cancel functionality
+            log.info("Waiting 5 seconds before reserving stock...");
+            Thread.sleep(5000);
+            
+            // Check if order was cancelled during the delay
+            order = orderMapper.selectById(order.getId());
+            if ("CANCELLED".equals(order.getStatus())) {
+                log.info("Order {} was cancelled by user. Stopping order placement (no rollback needed, cancel method already handled it).", order.getId());
+                return Result.success("Order was cancelled during processing.", null);
+            }
 
-            // Step 4: Reserve stock in warehouse
+            // Step 4: Reserve stock and update status (Independent transaction - immediately visible)
             log.info("Step 4: Reserving stock in warehouse...");
-            reservationId = reserveStock(order, orderCreateRequestDTO, stockAvailability);
-            order.setReservationId(reservationId);
-            String oldStatus1 = order.getStatus();
-            order.setStatus("PENDING_PAYMENT");
-            orderMapper.updateById(order);
+            reservationId = reserveStockAndUpdateStatus(order.getId(), orderCreateRequestDTO, stockAvailability);
             log.info("Stock reserved with reservation ID: {}", reservationId);
-            log.info("Order Status: {} -> PENDING_PAYMENT", oldStatus1);
+            log.info("Order Status: PENDING_VALIDATION -> PENDING_PAYMENT (immediately visible for queries and cancel)");
+            
+            // Delay for testing cancel functionality
+            log.info("Waiting 5 seconds before processing payment...");
+            Thread.sleep(5000);
+            
+            // Check if order was cancelled during the delay
+            order = orderMapper.selectById(order.getId());
+            if ("CANCELLED".equals(order.getStatus())) {
+                log.info("Order {} was cancelled by user. Stopping order placement (no rollback needed, cancel method already handled it).", order.getId());
+                return Result.success("Order was cancelled during processing.", null);
+            }
 
-            // Step 5: Process payment through bank
+            // Step 5: Process payment and update status (Independent transaction - immediately visible)
             log.info("Step 5: Processing payment through bank...");
-            Result<TransactionDto> paymentResult = processPayment(order, user);
+            Result<TransactionDto> paymentResult = processPaymentAndUpdateStatus(order.getId(), user);
             
             if (paymentResult.getCode() != 200) {
                 log.error("Payment failed: {}", paymentResult.getMessage());
                 // Release reserved stock
                 releaseReservedStock(String.valueOf(order.getId()), reservationId, "Payment failed");
-                String oldStatus2 = order.getStatus();
-                order.setStatus("FAILED");
-                orderMapper.updateById(order);
-                log.error("Order Status: {} -> FAILED (Reason: Payment failed)", oldStatus2);
+                updateOrderStatusImmediate(order.getId(), "FAILED");
+                log.error("Order Status: PENDING_PAYMENT -> FAILED (Reason: Payment failed)");
                 sendOrderFailureNotification(order.getId(), user.getEmail(), "Payment failed", paymentResult.getMessage());
                 return Result.error(400, "Payment failed: " + paymentResult.getMessage());
             }
             
             paymentProcessed = true;
-            order.setTransactionId(String.valueOf(paymentResult.getData().getId()));
-            String oldStatus3 = order.getStatus();
-            order.setStatus("PAYMENT_SUCCESSFUL");
-            orderMapper.updateById(order);
             log.info("Payment successful. Transaction ID: {}", paymentResult.getData().getId());
-            log.info("Order Status: {} -> PAYMENT_SUCCESSFUL", oldStatus3);
+            log.info("Order Status: PENDING_PAYMENT -> PAYMENT_SUCCESSFUL (immediately visible for queries and cancel)");
+            
+            // Delay for testing cancel functionality
+            log.info("Waiting 10 seconds before sending delivery request...");
+            Thread.sleep(10000);
+            
+            // Check if order was cancelled during the delay
+            order = orderMapper.selectById(order.getId());
+            if ("CANCELLED".equals(order.getStatus())) {
+                log.info("Order {} was cancelled by user. Stopping order placement (no rollback needed, cancel method already handled it).", order.getId());
+                return Result.success("Order was cancelled during processing.", null);
+            }
 
-            // Step 6: Send delivery request to DeliveryCo
+            // Step 6: Send delivery request and update status (Independent transaction - immediately visible)
             log.info("Step 6: Sending delivery request to DeliveryCo...");
-            DeliveryRequestDto deliveryRequest = buildDeliveryRequest(order, orderCreateRequestDTO, user, stockAvailability);
-            messagePublisher.publishDeliveryRequest(deliveryRequest);
-            String oldStatus4 = order.getStatus();
-            order.setStatus("DELIVERY_REQUESTED");
-            orderMapper.updateById(order);
+            sendDeliveryRequestAndUpdateStatus(order.getId(), orderCreateRequestDTO, user, stockAvailability);
             log.info("Delivery request sent successfully");
-            log.info("Order Status: {} -> DELIVERY_REQUESTED", oldStatus4);
+            log.info("Order Status: PAYMENT_SUCCESSFUL -> DELIVERY_REQUESTED (immediately visible)");
 
             // Step 7: Confirm reservation with warehouse
             log.info("Step 7: Confirming reservation with warehouse...");
@@ -140,11 +163,48 @@ public class OrderServiceImpl implements OrderService {
 
             log.info("════════════════════════════════════════════════════════════");
             log.info("Order placement completed successfully!");
+            order = orderMapper.selectById(order.getId()); // Refresh order data
             log.info("Order ID: {}, Total: ${}, Status: {}", order.getId(), order.getTotalAmount(), order.getStatus());
             log.info("════════════════════════════════════════════════════════════");
             
-            return Result.success("Order placed successfully. Awaiting delivery.", orderResponse);
+            OrderResponseDto response = new OrderResponseDto();
+            response.setOrderId(order.getId());
+            response.setStatus(order.getStatus());
+            response.setTotalAmount(order.getTotalAmount());
+            response.setCreateTime(order.getCreateTime());
+            
+            return Result.success("Order placed successfully. Awaiting delivery.", response);
 
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("Order placement interrupted: {}", e.getMessage());
+            if (order != null) {
+                try {
+                    User user = userMapper.selectById(orderCreateRequestDTO.getUserId());
+                    if (paymentProcessed) {
+                        processRefund(order, user);
+                    }
+                    if (reservationId != null) {
+                        releaseReservedStock(String.valueOf(order.getId()), reservationId, "Order interrupted");
+                    }
+                    updateOrderStatusImmediate(order.getId(), "FAILED");
+                    sendOrderFailureNotification(order.getId(), user.getEmail(), "Order interrupted", e.getMessage());
+                } catch (Exception rollbackEx) {
+                    log.error("Error during rollback: {}", rollbackEx.getMessage(), rollbackEx);
+                }
+            }
+            return Result.error(500, "Order placement interrupted");
+            
+        } catch (BusinessException e) {
+            // If the order was cancelled, the cancel method already handled rollback
+            if (e.getMessage() != null && e.getMessage().contains("cancelled")) {
+                log.info("Order placement stopped because order was cancelled by user.");
+                return Result.success("Order was cancelled during processing.", null);
+            }
+            // For other business exceptions, treat as regular error
+            log.error("Business exception during order placement: {}", e.getMessage(), e);
+            return Result.error(e.getCode() != null ? e.getCode() : 500, e.getMessage());
+            
         } catch (Exception e) {
             log.error("════════════════════════════════════════════════════════════");
             log.error("Order placement failed with exception: {}", e.getMessage(), e);
@@ -167,10 +227,8 @@ public class OrderServiceImpl implements OrderService {
                     }
                     
                     // Update order status
-                    String oldStatusException = order.getStatus();
-                    order.setStatus("FAILED");
-                    orderMapper.updateById(order);
-                    log.error("Order Status: {} -> FAILED (Reason: Exception occurred)", oldStatusException);
+                    updateOrderStatusImmediate(order.getId(), "FAILED");
+                    log.error("Order Status: -> FAILED (Reason: Exception occurred)");
                     
                     // Send failure notification
                     sendOrderFailureNotification(order.getId(), user.getEmail(), "Order processing failed", e.getMessage());
@@ -488,15 +546,18 @@ public class OrderServiceImpl implements OrderService {
         return availabilityMap;
     }
 
-    @Transactional
-    protected OrderResponseDto createOrder(OrderCreateRequestDTO request, User user) {
+    /**
+     * Create order in a new transaction - immediately visible to queries
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    protected OrderResponseDto createOrderTransaction(OrderCreateRequestDTO request, User user) {
         Order order = new Order();
         order.setUserId(request.getUserId());
         order.setStatus("PENDING_VALIDATION");
         order.setCreateTime(LocalDateTime.now());
         order.setUpdateTime(LocalDateTime.now());
 
-        float totalAmount = 0f;
+        double totalAmount = 0.0;
         List<OrderItem> orderItems = new ArrayList<>();
         List<OrderItemDetailDto> itemDetails = new ArrayList<>();
 
@@ -509,8 +570,8 @@ public class OrderServiceImpl implements OrderService {
             }
             
             ProductPriceResponse product = productResult.getData();
-            float price = product.getPrice().floatValue();
-            float subTotalAmount = price * itemReq.getQuantity();
+            double price = product.getPrice().doubleValue();
+            double subTotalAmount = price * itemReq.getQuantity();
             totalAmount += subTotalAmount;
 
             OrderItem orderItem = new OrderItem();
@@ -694,6 +755,90 @@ public class OrderServiceImpl implements OrderService {
             messagePublisher.publishOrderFailureNotification(notification);
         } catch (Exception e) {
             log.error("Failed to send order failure notification: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Reserve stock and update order status in a new transaction - immediately visible
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    protected String reserveStockAndUpdateStatus(Long orderId, OrderCreateRequestDTO request, 
+                                                   Map<Long, StockAvailabilityResponse> stockAvailability) {
+        Order order = orderMapper.selectById(orderId);
+        
+        // Double-check the order hasn't been cancelled
+        if ("CANCELLED".equals(order.getStatus())) {
+            log.warn("Order {} is already cancelled. Skipping stock reservation.", orderId);
+            throw new BusinessException(400, "Order has been cancelled");
+        }
+        
+        String reservationId = reserveStock(order, request, stockAvailability);
+        
+        order.setReservationId(reservationId);
+        order.setStatus("PENDING_PAYMENT");
+        order.setUpdateTime(LocalDateTime.now());
+        orderMapper.updateById(order);
+        
+        return reservationId;
+    }
+
+    /**
+     * Process payment and update order status in a new transaction - immediately visible
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    protected Result<TransactionDto> processPaymentAndUpdateStatus(Long orderId, User user) {
+        Order order = orderMapper.selectById(orderId);
+        
+        // Double-check the order hasn't been cancelled
+        if ("CANCELLED".equals(order.getStatus())) {
+            log.warn("Order {} is already cancelled. Skipping payment processing.", orderId);
+            return Result.error(400, "Order has been cancelled");
+        }
+        
+        Result<TransactionDto> paymentResult = processPayment(order, user);
+        
+        if (paymentResult.getCode() == 200) {
+            order.setTransactionId(String.valueOf(paymentResult.getData().getId()));
+            order.setStatus("PAYMENT_SUCCESSFUL");
+            order.setUpdateTime(LocalDateTime.now());
+            orderMapper.updateById(order);
+        }
+        
+        return paymentResult;
+    }
+
+    /**
+     * Send delivery request and update order status in a new transaction - immediately visible
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    protected void sendDeliveryRequestAndUpdateStatus(Long orderId, OrderCreateRequestDTO request, 
+                                                       User user, Map<Long, StockAvailabilityResponse> stockAvailability) {
+        Order order = orderMapper.selectById(orderId);
+        
+        // Double-check the order hasn't been cancelled
+        if ("CANCELLED".equals(order.getStatus())) {
+            log.warn("Order {} is already cancelled. Skipping delivery request.", orderId);
+            throw new BusinessException(400, "Order has been cancelled");
+        }
+        
+        DeliveryRequestDto deliveryRequest = buildDeliveryRequest(order, request, user, stockAvailability);
+        messagePublisher.publishDeliveryRequest(deliveryRequest);
+        
+        order.setStatus("DELIVERY_REQUESTED");
+        order.setUpdateTime(LocalDateTime.now());
+        orderMapper.updateById(order);
+    }
+
+    /**
+     * Update order status in a new transaction - immediately visible
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    protected void updateOrderStatusImmediate(Long orderId, String newStatus) {
+        Order order = orderMapper.selectById(orderId);
+        if (order != null) {
+            order.setStatus(newStatus);
+            order.setUpdateTime(LocalDateTime.now());
+            orderMapper.updateById(order);
         }
     }
 }
