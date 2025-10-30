@@ -78,36 +78,42 @@ public class OrderServiceImpl implements OrderService {
             }
             log.info("Inventory validation successful");
 
-            // Step 2: Check stock availability and get warehouse allocation
-            log.info("Step 2: Checking stock availability...");
-            Map<Long, StockAvailabilityResponse> stockAvailability = checkStockAvailability(orderCreateRequestDTO);
-            log.info("Stock availability confirmed");
-            
-            // Delay for testing cancel functionality
-            log.info("Waiting 5 seconds before creating order...");
-            Thread.sleep(5000);
-
-            // Step 3: Create order in database (Independent transaction - immediately visible)
-            log.info("Step 3: Creating order in database...");
+            // After validation, create order in the database
+            log.info("Step 2: Creating order in database...");
             OrderResponseDto orderResponse = createOrderTransaction(orderCreateRequestDTO, user);
             order = orderMapper.selectById(orderResponse.getOrderId());
             log.info("Order created with ID: {}", order.getId());
-            log.info("Order Status: PENDING_VALIDATION (immediately visible for queries and cancel)");
-            
-            // Delay for testing cancel functionality
-            log.info("Waiting 5 seconds before reserving stock...");
-            Thread.sleep(5000);
-            
-            // Check if order was cancelled during the delay
-            order = orderMapper.selectById(order.getId());
-            if ("CANCELLED".equals(order.getStatus())) {
-                log.info("Order {} was cancelled by user. Stopping order placement (no rollback needed, cancel method already handled it).", order.getId());
-                return Result.success("Order was cancelled during processing.", null);
-            }
 
-            // Step 4: Reserve stock and update status (Independent transaction - immediately visible)
-            log.info("Step 4: Reserving stock in warehouse...");
-            reservationId = reserveStockAndUpdateStatus(order.getId(), orderCreateRequestDTO, stockAvailability);
+            // Step 3: Reserve stock for each item
+            reservationId = null;
+            for (OrderItemRequestDTO item : orderCreateRequestDTO.getItems()) {
+                // build allocation with entire quantity to one warehouse (simple strategy)
+                List<WarehouseAllocation> warehouseAllocations = new ArrayList<>();
+                warehouseAllocations.add(new WarehouseAllocation(1L, item.getQuantity())); // default warehouseId 1 for now
+                ReserveStockRequest reserveRequest = new ReserveStockRequest(
+                    String.valueOf(order.getId()),
+                    item.getProductId(),
+                    item.getQuantity(),
+                    warehouseAllocations
+                );
+                Result<StockReservationResponse> reserveResult = warehouseClient.reserveStock(reserveRequest);
+                if (reserveResult.getCode() != 200 || reserveResult.getData() == null) {
+                    log.error("Failed to reserve stock for productId {}: {}", item.getProductId(), reserveResult.getMessage());
+                    // Rollback: set FAILED, send notify, return error
+                    updateOrderStatusImmediate(order.getId(), "FAILED");
+                    sendOrderFailureNotification(order.getId(), user.getEmail(), "Insufficient inventory", "Failed to reserve stock for product " + item.getProductId());
+                    return Result.error(400, "Insufficient inventory for productId " + item.getProductId());
+                }
+                // use the first reservationId (for order-level tracking)
+                if (reservationId == null) {
+                    reservationId = reserveResult.getData().getReservationId();
+                }
+            }
+            // update order with reservationId and status
+            order.setReservationId(reservationId);
+            order.setStatus("PENDING_PAYMENT");
+            order.setUpdateTime(LocalDateTime.now());
+            orderMapper.updateById(order);
             log.info("Stock reserved with reservation ID: {}", reservationId);
             log.info("Order Status: PENDING_VALIDATION -> PENDING_PAYMENT (immediately visible for queries and cancel)");
             
@@ -153,7 +159,7 @@ public class OrderServiceImpl implements OrderService {
 
             // Step 6: Send delivery request and update status (Independent transaction - immediately visible)
             log.info("Step 6: Sending delivery request to DeliveryCo...");
-            sendDeliveryRequestAndUpdateStatus(order.getId(), orderCreateRequestDTO, user, stockAvailability);
+            sendDeliveryRequestAndUpdateStatus(order.getId(), orderCreateRequestDTO, user); // Pass null for stockAvailability
             log.info("Delivery request sent successfully");
             log.info("Order Status: PAYMENT_SUCCESSFUL -> DELIVERY_REQUESTED (immediately visible)");
 
@@ -577,26 +583,6 @@ public class OrderServiceImpl implements OrderService {
         return new OrderValidationRequest(UUID.randomUUID().toString(), items);
     }
 
-    private Map<Long, StockAvailabilityResponse> checkStockAvailability(OrderCreateRequestDTO request) {
-        Map<Long, StockAvailabilityResponse> availabilityMap = new HashMap<>();
-        
-        for (OrderItemRequestDTO item : request.getItems()) {
-            CheckAvailabilityRequest availabilityRequest = new CheckAvailabilityRequest(
-                    item.getProductId(),
-                    item.getQuantity()
-            );
-            
-            Result<StockAvailabilityResponse> result = warehouseClient.checkAvailability(availabilityRequest);
-            if (result.getCode() == 200 && result.getData() != null) {
-                availabilityMap.put(item.getProductId(), result.getData());
-            } else {
-                throw new RuntimeException("Failed to check availability for product: " + item.getProductId());
-            }
-        }
-        
-        return availabilityMap;
-    }
-
     /**
      * Create order in a new transaction - immediately visible to queries
      */
@@ -660,51 +646,6 @@ public class OrderServiceImpl implements OrderService {
         return responseDto;
     }
 
-    private String reserveStock(Order order, OrderCreateRequestDTO request, 
-                                Map<Long, StockAvailabilityResponse> stockAvailability) {
-        // Reserve stock for each product
-        String reservationId = null;
-        
-        for (OrderItemRequestDTO item : request.getItems()) {
-            StockAvailabilityResponse availability = stockAvailability.get(item.getProductId());
-            if (availability == null || !availability.getAvailable()) {
-                throw new RuntimeException("Stock not available for product: " + item.getProductId());
-            }
-            
-            // Build warehouse allocation from availability response
-            List<WarehouseAllocation> allocations = availability.getWarehouses().stream()
-                    .filter(wh -> wh.getAllocatedQuantity() != null && wh.getAllocatedQuantity() > 0)
-                    .map(wh -> new WarehouseAllocation(wh.getWarehouseId(), wh.getAllocatedQuantity()))
-                    .collect(Collectors.toList());
-            
-            if (allocations.isEmpty()) {
-                // If no allocations specified, use first warehouse
-                WarehouseInfo firstWarehouse = availability.getWarehouses().get(0);
-                allocations.add(new WarehouseAllocation(firstWarehouse.getWarehouseId(), item.getQuantity()));
-            }
-            
-            ReserveStockRequest reserveRequest = new ReserveStockRequest(
-                    String.valueOf(order.getId()),
-                    item.getProductId(),
-                    item.getQuantity(),
-                    allocations
-            );
-            
-            Result<StockReservationResponse> reserveResult = warehouseClient.reserveStock(reserveRequest);
-            
-            if (reserveResult.getCode() != 200 || reserveResult.getData() == null) {
-                throw new RuntimeException("Failed to reserve stock for product: " + item.getProductId());
-            }
-            
-            // Use the first reservation ID (all items share the same order ID)
-            if (reservationId == null) {
-                reservationId = reserveResult.getData().getReservationId();
-            }
-        }
-        
-        return reservationId;
-    }
-
     private Result<TransactionDto> processPayment(Order order, User user) {
         BankRequestDto bankRequest = new BankRequestDto();
         bankRequest.setOrderId(String.valueOf(order.getId()));
@@ -749,49 +690,36 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-    private DeliveryRequestDto buildDeliveryRequest(Order order, OrderCreateRequestDTO request, 
-                                                    User user, Map<Long, StockAvailabilityResponse> stockAvailability) {
-        // Collect unique warehouse IDs
+    private DeliveryRequestDto buildDeliveryRequest(Order order, OrderCreateRequestDTO request, User user) {
         Set<Long> warehouseIds = new HashSet<>();
         List<DeliveryRequestDto.ProductInfo> products = new ArrayList<>();
-        
         for (OrderItemRequestDTO item : request.getItems()) {
-            StockAvailabilityResponse availability = stockAvailability.get(item.getProductId());
-            if (availability != null && availability.getWarehouses() != null) {
-                for (WarehouseInfo warehouse : availability.getWarehouses()) {
-                    if (warehouse.getAllocatedQuantity() != null && warehouse.getAllocatedQuantity() > 0) {
-                        warehouseIds.add(warehouse.getWarehouseId());
-                        
-                        // Get product name
-                        String productName = "Product " + item.getProductId();
-                        try {
-                            Result<ProductPriceResponse> productResult = warehouseClient.getProductPrice(item.getProductId(), null);
-                            if (productResult.getCode() == 200 && productResult.getData() != null) {
-                                productName = productResult.getData().getName();
-                            }
-                        } catch (Exception e) {
-                            log.warn("Failed to get product name for product: {}", item.getProductId());
-                        }
-                        
-                        DeliveryRequestDto.ProductInfo productInfo = DeliveryRequestDto.ProductInfo.builder()
-                                .productId(item.getProductId())
-                                .productName(productName)
-                                .quantity(warehouse.getAllocatedQuantity())
-                                .warehouseId(warehouse.getWarehouseId())
-                                .build();
-                        products.add(productInfo);
-                    }
+            long warehouseId = 1L;
+            warehouseIds.add(warehouseId);
+            String productName = "Product " + item.getProductId();
+            try {
+                Result<ProductPriceResponse> productResult = warehouseClient.getProductPrice(item.getProductId(), null);
+                if (productResult.getCode() == 200 && productResult.getData() != null) {
+                    productName = productResult.getData().getName();
                 }
+            } catch (Exception e) {
+                log.warn("Failed to get product name for product: {}", item.getProductId());
             }
-        }
-        
-        return DeliveryRequestDto.builder()
-                .orderId(order.getId())
-                .customerId(user.getId())
-                .customerEmail(user.getEmail())
-                .warehouseIds(new ArrayList<>(warehouseIds))
-                .products(products)
+            DeliveryRequestDto.ProductInfo productInfo = DeliveryRequestDto.ProductInfo.builder()
+                .productId(item.getProductId())
+                .productName(productName)
+                .quantity(item.getQuantity())
+                .warehouseId(warehouseId)
                 .build();
+            products.add(productInfo);
+        }
+        return DeliveryRequestDto.builder()
+            .orderId(order.getId())
+            .customerId(user.getId())
+            .customerEmail(user.getEmail())
+            .warehouseIds(new ArrayList<>(warehouseIds))
+            .products(products)
+            .build();
     }
 
     private void sendOrderFailureNotification(Long orderId, String customerEmail, String reason, String errorDetails) {
@@ -807,30 +735,6 @@ public class OrderServiceImpl implements OrderService {
         } catch (Exception e) {
             log.error("Failed to send order failure notification: {}", e.getMessage(), e);
         }
-    }
-
-    /**
-     * Reserve stock and update order status in a new transaction - immediately visible
-     */
-    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
-    protected String reserveStockAndUpdateStatus(Long orderId, OrderCreateRequestDTO request, 
-                                                   Map<Long, StockAvailabilityResponse> stockAvailability) {
-        Order order = orderMapper.selectById(orderId);
-        
-        // Double-check the order hasn't been cancelled
-        if ("CANCELLED".equals(order.getStatus())) {
-            log.warn("Order {} is already cancelled. Skipping stock reservation.", orderId);
-            throw new BusinessException(400, "Order has been cancelled");
-        }
-        
-        String reservationId = reserveStock(order, request, stockAvailability);
-        
-        order.setReservationId(reservationId);
-        order.setStatus("PENDING_PAYMENT");
-        order.setUpdateTime(LocalDateTime.now());
-        orderMapper.updateById(order);
-        
-        return reservationId;
     }
 
     /**
@@ -862,19 +766,14 @@ public class OrderServiceImpl implements OrderService {
      * Send delivery request and update order status in a new transaction - immediately visible
      */
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
-    protected void sendDeliveryRequestAndUpdateStatus(Long orderId, OrderCreateRequestDTO request, 
-                                                       User user, Map<Long, StockAvailabilityResponse> stockAvailability) {
+    protected void sendDeliveryRequestAndUpdateStatus(Long orderId, OrderCreateRequestDTO request, User user) {
         Order order = orderMapper.selectById(orderId);
-        
-        // Double-check the order hasn't been cancelled
         if ("CANCELLED".equals(order.getStatus())) {
             log.warn("Order {} is already cancelled. Skipping delivery request.", orderId);
             throw new BusinessException(400, "Order has been cancelled");
         }
-        
-        DeliveryRequestDto deliveryRequest = buildDeliveryRequest(order, request, user, stockAvailability);
+        DeliveryRequestDto deliveryRequest = buildDeliveryRequest(order, request, user);
         messagePublisher.publishDeliveryRequest(deliveryRequest);
-        
         order.setStatus("DELIVERY_REQUESTED");
         order.setUpdateTime(LocalDateTime.now());
         orderMapper.updateById(order);

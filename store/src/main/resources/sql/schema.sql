@@ -1,5 +1,6 @@
-DROP TABLE IF EXISTS users;
--- users
+DROP TABLE IF EXISTS order_item;
+DROP TABLE IF EXISTS orders;
+
 CREATE TABLE IF NOT EXISTS users (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `user_name` VARCHAR(50) NOT NULL,
@@ -9,12 +10,6 @@ CREATE TABLE IF NOT EXISTS users (
     UNIQUE KEY `uk_user_name` (`user_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Drop order tables if they exist (for clean testing)
--- Note: Must drop order_item first due to foreign key constraint
-DROP TABLE IF EXISTS order_item;
-DROP TABLE IF EXISTS orders;
-
--- orders
 CREATE TABLE IF NOT EXISTS orders (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `user_id` BIGINT UNSIGNED NOT NULL,
@@ -28,9 +23,8 @@ CREATE TABLE IF NOT EXISTS orders (
     CONSTRAINT `fk_order_user` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`),
     INDEX `idx_orders_user_id` (`user_id`),
     INDEX `idx_orders_status` (`status`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- order_item
 CREATE TABLE IF NOT EXISTS order_item (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `order_id` BIGINT UNSIGNED NOT NULL,
