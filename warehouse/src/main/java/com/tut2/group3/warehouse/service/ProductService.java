@@ -102,33 +102,34 @@ public class ProductService {
 
     /**
      * Get all products with stock information
-     * Stock is calculated from inventory table (availableQuantity + reservedQuantity)
+     * Stock is calculated from inventory table (availableQuantity only)
+     * This matches the checkAvailability logic to show only purchasable stock
      */
     public List<ProductWithStockDto> getAllProductsWithStock() {
         log.info("Querying all products with stock information");
         List<Product> products = productMapper.selectList(null);
-        
+
         return products.stream()
                 .map(product -> {
-                    // Calculate total stock from all warehouses for this product
+                    // Calculate available stock from all warehouses for this product
                     LambdaQueryWrapper<Inventory> inventoryQuery = new LambdaQueryWrapper<>();
                     inventoryQuery.eq(Inventory::getProductId, product.getId());
                     List<Inventory> inventories = inventoryMapper.selectList(inventoryQuery);
-                    
-                    // Sum up availableQuantity + reservedQuantity from all warehouses
-                    int totalStock = inventories.stream()
-                            .mapToInt(inv -> 
-                                (inv.getAvailableQuantity() != null ? inv.getAvailableQuantity() : 0) +
-                                (inv.getReservedQuantity() != null ? inv.getReservedQuantity() : 0)
+
+                    // Sum up only availableQuantity from all warehouses
+                    // This matches the checkAvailability logic
+                    int availableStock = inventories.stream()
+                            .mapToInt(inv ->
+                                inv.getAvailableQuantity() != null ? inv.getAvailableQuantity() : 0
                             )
                             .sum();
-                    
+
                     return ProductWithStockDto.builder()
                             .id(product.getId())
                             .name(product.getName())
                             .description(product.getDescription())
                             .price(product.getPrice())
-                            .stock(totalStock)
+                            .stock(availableStock)
                             .build();
                 })
                 .collect(Collectors.toList());
