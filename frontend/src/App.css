@@ -1,0 +1,121 @@
+.App {
+  text-align: center;
+}
+
+.submit-form {
+  max-width: 500px;
+  margin: auto;
+}
+
+.edit-form {
+  max-width: 500px;
+  margin: auto;
+}
+
+.cart-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  border-bottom: 1px solid #ddd;
+}
+
+.order-status {
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-weight: bold;
+  display: inline-block;
+}
+
+.order-status.pending {
+  background-color: #ffc107;
+  color: #000;
+}
+
+.order-status.payment-successful {
+  background-color: #28a745;
+  color: #fff;
+}
+
+.order-status.delivery-requested {
+  background-color: #17a2b8;
+  color: #fff;
+}
+
+.order-status.in-transit {
+  background-color: #007bff;
+  color: #fff;
+}
+
+.order-status.delivered {
+  background-color: #28a745;
+  color: #fff;
+}
+
+.order-status.cancelled {
+  background-color: #6c757d;
+  color: #fff;
+}
+
+.order-status.failed {
+  background-color: #dc3545;
+  color: #fff;
+}
+
+.order-timeline {
+  margin-top: 20px;
+  padding-left: 20px;
+}
+
+.timeline-item {
+  margin-bottom: 10px;
+  padding-left: 15px;
+  border-left: 3px solid #007bff;
+}
+
+.product-card {
+  height: 100%;
+}
+
+.product-card .card-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.product-card .card-footer {
+  margin-top: auto;
+}
+
+.cart-badge {
+  position: relative;
+  top: -10px;
+  right: -5px;
+}
+
+.navbar-brand {
+  font-weight: bold;
+  font-size: 1.5rem;
+}
+
+/* Modal styles */
+.modal.show {
+  display: block;
+}
+
+.modal-backdrop {
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+/* Status history list */
+.list-group-item {
+  transition: background-color 0.3s ease;
+}
+
+.list-group-item:hover {
+  background-color: #f8f9fa;
+}
+
+/* Spinner animation */
+@keyframes spinner-border {
+  to { transform: rotate(360deg); }
+}
