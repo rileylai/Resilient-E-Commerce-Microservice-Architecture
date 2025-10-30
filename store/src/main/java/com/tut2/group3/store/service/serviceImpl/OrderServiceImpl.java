@@ -27,6 +27,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.dao.DataAccessException;
+import org.springframework.amqp.AmqpConnectException;
+import org.springframework.web.client.RestClientException;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -53,10 +56,9 @@ public class OrderServiceImpl implements OrderService {
         Order order = null;
         String reservationId = null;
         boolean paymentProcessed = false;
-        
+        User user = null;
         try {
-            // Get user information
-            User user = userMapper.selectById(orderCreateRequestDTO.getUserId());
+            user = userMapper.selectById(orderCreateRequestDTO.getUserId());
             if (user == null) {
                 log.error("User not found: {}", orderCreateRequestDTO.getUserId());
                 return Result.error(404, "User not found");
@@ -175,12 +177,61 @@ public class OrderServiceImpl implements OrderService {
             
             return Result.success("Order placed successfully. Awaiting delivery.", response);
 
+        } catch (DataAccessException dae) {
+            log.error("Database Exception during order placement:", dae);
+            if (order != null) {
+                try {
+                    if (paymentProcessed) processRefund(order, user);
+                    if (reservationId != null) releaseReservedStock(String.valueOf(order.getId()), reservationId, "Database error");
+                    updateOrderStatusImmediate(order.getId(), "FAILED");
+                    sendOrderFailureNotification(order.getId(), user != null ? user.getEmail() : "", "Database service unavailable", dae.getMessage());
+                } catch (Exception rollbackEx) {
+                    log.error("Error during rollback: {}", rollbackEx.getMessage(), rollbackEx);
+                }
+            }
+            return Result.error(501, "Database service unavailable, please try again later!");
+        } catch (AmqpConnectException mqEx) {
+            log.error("RabbitMQ Exception during order placement:", mqEx);
+            if (order != null) {
+                try {
+                    if (paymentProcessed) processRefund(order, user);
+                    if (reservationId != null) releaseReservedStock(String.valueOf(order.getId()), reservationId, "RabbitMQ error");
+                    updateOrderStatusImmediate(order.getId(), "FAILED");
+                    sendOrderFailureNotification(order.getId(), user != null ? user.getEmail() : "", "Message queue service unreachable", mqEx.getMessage());
+                } catch (Exception rollbackEx) {
+                    log.error("Error during rollback: {}", rollbackEx.getMessage(), rollbackEx);
+                }
+            }
+            return Result.error(502, "Message queue exception, please try again later!");
+        } catch (RestClientException remoteEx) {
+            String remoteMsg = remoteEx.getMessage() != null ? remoteEx.getMessage().toLowerCase() : "";
+            log.error("Remote Service Exception during order placement:", remoteEx);
+            if (order != null) {
+                try {
+                    if (remoteMsg.contains("deliveryco")) {
+                        if (paymentProcessed) processRefund(order, user);
+                        if (reservationId != null) releaseReservedStock(String.valueOf(order.getId()), reservationId, "DeliveryCo unreachable");
+                        updateOrderStatusImmediate(order.getId(), "FAILED");
+                        sendOrderFailureNotification(order.getId(), user != null ? user.getEmail() : "", "Delivery service unavailable, refund issued", remoteEx.getMessage());
+                        return Result.error(503, "Failed to connect to delivery service. Order failed and refunded! (DeliveryCo unavailable, refunded)");
+                    } else {
+                        if (paymentProcessed) processRefund(order, user);
+                        if (reservationId != null) releaseReservedStock(String.valueOf(order.getId()), reservationId, "Remote service error");
+                        updateOrderStatusImmediate(order.getId(), "FAILED");
+                        sendOrderFailureNotification(order.getId(), user != null ? user.getEmail() : "", "External service call failed", remoteEx.getMessage());
+                        return Result.error(504, "External service call failed, please try again later!");
+                    }
+                } catch (Exception rollbackEx) {
+                    log.error("Error during rollback: {}", rollbackEx.getMessage(), rollbackEx);
+                }
+            }
+            return Result.error(504, "External service call failed, please try again later!");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("Order placement interrupted: {}", e.getMessage());
             if (order != null) {
                 try {
-                    User user = userMapper.selectById(orderCreateRequestDTO.getUserId());
+                    user = userMapper.selectById(orderCreateRequestDTO.getUserId());
                     if (paymentProcessed) {
                         processRefund(order, user);
                     }
@@ -212,7 +263,7 @@ public class OrderServiceImpl implements OrderService {
             // Rollback actions
             if (order != null) {
                 try {
-                    User user = userMapper.selectById(orderCreateRequestDTO.getUserId());
+                    user = userMapper.selectById(orderCreateRequestDTO.getUserId());
                     
                     // If payment was processed, refund it
                     if (paymentProcessed) {

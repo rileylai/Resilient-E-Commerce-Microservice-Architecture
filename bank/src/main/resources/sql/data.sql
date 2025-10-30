@@ -11,3 +11,6 @@ VALUES ('1', 100000.0000, 'AUD', CURRENT_TIMESTAMP);
 INSERT INTO accounts (user_id, balance, currency, created_at) 
 VALUES ('2', 0.0000, 'AUD', CURRENT_TIMESTAMP);
 
+INSERT INTO accounts (user_id, balance, currency, created_at)
+VALUES ('3', 100000.0000, 'AUD', CURRENT_TIMESTAMP);
+
