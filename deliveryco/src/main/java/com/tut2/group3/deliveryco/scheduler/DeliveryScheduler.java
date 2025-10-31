@@ -5,6 +5,7 @@ import com.tut2.group3.deliveryco.entity.enums.DeliveryStatus;
 import com.tut2.group3.deliveryco.service.DeliveryService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -69,47 +70,49 @@ public class DeliveryScheduler {
                     getCurrentTimestamp(),
                     pendingDeliveries.size());
 
-            // Process each pending delivery
-            int successCount = 0;
-            int errorCount = 0;
-
+            // Process each pending delivery concurrently
             for (Delivery delivery : pendingDeliveries) {
-                try {
-                    DeliveryStatus oldStatus = delivery.getStatus();
-
-                    // Process status progression
-                    deliveryService.processDeliveryStatusProgression(delivery);
-
-                    // Reload delivery to get updated status
-                    Delivery updatedDelivery = deliveryService.getDeliveryById(delivery.getId());
-                    DeliveryStatus newStatus = updatedDelivery.getStatus();
-
-                    log.info("[{}] Success DeliveryID: {} | OrderID: {} | {} → {}",
-                            getCurrentTimestamp(),
-                            delivery.getId(),
-                            delivery.getOrderId(),
-                            oldStatus,
-                            newStatus);
-
-                    successCount++;
-
-                } catch (Exception e) {
-                    log.error("[{}] Error processing DeliveryID: {} - {}",
-                            getCurrentTimestamp(),
-                            delivery.getId(),
-                            e.getMessage());
-                    errorCount++;
-                }
+                processDeliveryAsync(delivery);
             }
 
-            log.info("[{}] Scheduler completed - Success: {}, Errors: {}",
+            log.info("[{}] Scheduler dispatched {} deliveries for concurrent processing",
                     getCurrentTimestamp(),
-                    successCount,
-                    errorCount);
+                    pendingDeliveries.size());
             log.info("════════════════════════════════════════════════════════════════");
 
         } catch (Exception e) {
             log.error("[{}] Scheduler error: {}", getCurrentTimestamp(), e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Process single delivery asynchronously
+     * Allows multiple deliveries to be processed concurrently
+     */
+    @Async
+    public void processDeliveryAsync(Delivery delivery) {
+        try {
+            DeliveryStatus oldStatus = delivery.getStatus();
+
+            // Process status progression
+            deliveryService.processDeliveryStatusProgression(delivery);
+
+            // Reload delivery to get updated status
+            Delivery updatedDelivery = deliveryService.getDeliveryById(delivery.getId());
+            DeliveryStatus newStatus = updatedDelivery.getStatus();
+
+            log.info("[{}] Success DeliveryID: {} | OrderID: {} | {} → {}",
+                    getCurrentTimestamp(),
+                    delivery.getId(),
+                    delivery.getOrderId(),
+                    oldStatus,
+                    newStatus);
+
+        } catch (Exception e) {
+            log.error("[{}] Error processing DeliveryID: {} - {}",
+                    getCurrentTimestamp(),
+                    delivery.getId(),
+                    e.getMessage());
         }
     }
 
