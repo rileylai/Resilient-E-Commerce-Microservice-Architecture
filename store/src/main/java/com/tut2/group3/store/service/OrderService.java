@@ -37,10 +37,22 @@ public interface OrderService {
      * Update order delivery status based on DeliveryCo status update
      * - Updates order status field
      * - Handles special cases (DELIVERED, LOST)
-     * 
+     *
      * @param orderId Order ID
      * @param deliveryStatus New delivery status from DeliveryCo
      * @param message Additional message about status update
      */
     void updateDeliveryStatus(Long orderId, String deliveryStatus, String message);
+
+    /**
+     * Cancel an order due to service timeout
+     * - Bypasses normal cancellation restrictions
+     * - Releases reserved stock
+     * - Processes refund if payment was made
+     * - Sends timeout notification email
+     *
+     * @param orderId Order ID
+     * @param reason Timeout reason
+     */
+    void cancelOrderDueToTimeout(Long orderId, String reason);
 }

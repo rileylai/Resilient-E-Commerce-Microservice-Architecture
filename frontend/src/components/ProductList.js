@@ -21,14 +21,25 @@ export default class ProductList extends Component {
   retrieveProducts() {
     ProductService.getAllProducts()
       .then(response => {
+        // Check if the response indicates an error
+        if (response.data.code !== 200) {
+          const errorMessage = response.data.message || "Failed to load products";
+          this.setState({
+            message: errorMessage
+          });
+          return;
+        }
+
         this.setState({
           products: response.data.data || []
         });
       })
       .catch(e => {
         console.log(e);
+        // Display error message from backend or default message
+        const errorMessage = e.response?.data?.message || "Sorry, the service is currently unavailable. Please try again later.";
         this.setState({
-          message: "Failed to load products"
+          message: errorMessage
         });
       });
   }

@@ -27,5 +27,10 @@ public enum DeliveryStatus {
     /**
      * Package has been lost (simulates 5% failure rate)
      */
-    LOST
+    LOST,
+
+    /**
+     * Delivery has been cancelled (order was cancelled by customer or system)
+     */
+    CANCELLED
 }

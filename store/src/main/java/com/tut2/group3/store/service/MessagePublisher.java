@@ -1,6 +1,7 @@
 package com.tut2.group3.store.service;
 
 import com.tut2.group3.store.config.RabbitMQConfig;
+import com.tut2.group3.store.dto.deliveryco.DeliveryCancellationDto;
 import com.tut2.group3.store.dto.deliveryco.DeliveryRequestDto;
 import com.tut2.group3.store.dto.email.OrderFailureNotificationDto;
 import com.tut2.group3.store.dto.email.RefundNotificationDto;
@@ -37,6 +38,24 @@ public class MessagePublisher {
         } catch (Exception e) {
             log.error("Failed to publish delivery request for order: {}", deliveryRequest.getOrderId(), e);
             throw new RuntimeException("Failed to publish delivery request", e);
+        }
+    }
+
+    /**
+     * Publish delivery cancellation to DeliveryCo service
+     */
+    public void publishDeliveryCancellation(DeliveryCancellationDto cancellation) {
+        try {
+            log.info("Publishing delivery cancellation for order: {}", cancellation.getOrderId());
+            rabbitTemplate.convertAndSend(
+                    RabbitMQConfig.DELIVERY_EXCHANGE,
+                    RabbitMQConfig.DELIVERY_CANCELLATION_ROUTING_KEY,
+                    cancellation
+            );
+            log.info("Delivery cancellation published successfully");
+        } catch (Exception e) {
+            log.error("Failed to publish delivery cancellation for order: {}", cancellation.getOrderId(), e);
+            // Don't throw exception - cancellation message failure shouldn't block the cancellation process
         }
     }
 

@@ -22,11 +22,13 @@ public class RabbitMQConfig {
 
     // ========== Queue Names ==========
     public static final String DELIVERY_REQUEST_QUEUE = "delivery.request.queue";
+    public static final String DELIVERY_CANCELLATION_QUEUE = "delivery.cancellation.queue";
     public static final String DELIVERY_STATUS_QUEUE = "delivery.status.queue";
     public static final String DELIVERY_EMAIL_QUEUE = "delivery.email.queue";
 
     // ========== Routing Keys ==========
     public static final String DELIVERY_REQUEST_ROUTING_KEY = "delivery.request";
+    public static final String DELIVERY_CANCELLATION_ROUTING_KEY = "delivery.cancellation";
     public static final String DELIVERY_STATUS_ROUTING_KEY = "delivery.status.update";
     public static final String DELIVERY_EMAIL_ROUTING_KEY = "notification.email";
 
@@ -42,6 +44,13 @@ public class RabbitMQConfig {
     public Queue deliveryRequestQueue() {
         return QueueBuilder
                 .durable(DELIVERY_REQUEST_QUEUE)
+                .build();
+    }
+
+    @Bean
+    public Queue deliveryCancellationQueue() {
+        return QueueBuilder
+                .durable(DELIVERY_CANCELLATION_QUEUE)
                 .build();
     }
 
@@ -65,6 +74,14 @@ public class RabbitMQConfig {
                 .bind(deliveryRequestQueue)
                 .to(deliveryExchange)
                 .with(DELIVERY_REQUEST_ROUTING_KEY);
+    }
+
+    @Bean
+    public Binding deliveryCancellationBinding(Queue deliveryCancellationQueue, TopicExchange deliveryExchange) {
+        return BindingBuilder
+                .bind(deliveryCancellationQueue)
+                .to(deliveryExchange)
+                .with(DELIVERY_CANCELLATION_ROUTING_KEY);
     }
 
     @Bean

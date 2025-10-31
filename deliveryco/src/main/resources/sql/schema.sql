@@ -1,5 +1,8 @@
--- Create deliveries table if it doesn't exist
-CREATE TABLE IF NOT EXISTS deliveries (
+-- Drop existing table to ensure clean state
+DROP TABLE IF EXISTS deliveries;
+
+-- Create deliveries table
+CREATE TABLE deliveries (
     id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT 'Unique identifier',
     order_id BIGINT NOT NULL COMMENT 'Associated order ID from store service',
     customer_id BIGINT NOT NULL COMMENT 'Customer ID',
@@ -8,7 +11,7 @@ CREATE TABLE IF NOT EXISTS deliveries (
     status VARCHAR(50) NOT NULL COMMENT 'Delivery status',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation timestamp',
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Last update timestamp',
-    INDEX idx_order_id (order_id),
+    UNIQUE KEY uk_order_id (order_id) COMMENT 'Prevent duplicate deliveries for same order',
     INDEX idx_customer_id (customer_id),
     INDEX idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Delivery information table';
