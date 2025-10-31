@@ -5,6 +5,7 @@ import com.tut2.group3.store.client.BankClient;
 import com.tut2.group3.store.client.WarehouseClient;
 import com.tut2.group3.store.dto.bank.BankRequestDto;
 import com.tut2.group3.store.dto.bank.TransactionDto;
+import com.tut2.group3.store.dto.deliveryco.DeliveryCancellationDto;
 import com.tut2.group3.store.dto.deliveryco.DeliveryRequestDto;
 import com.tut2.group3.store.dto.email.OrderFailureNotificationDto;
 import com.tut2.group3.store.dto.email.RefundNotificationDto;
@@ -30,6 +31,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.dao.DataAccessException;
 import org.springframework.amqp.AmqpConnectException;
 import org.springframework.web.client.RestClientException;
+import feign.FeignException;
+import feign.RetryableException;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -78,18 +81,66 @@ public class OrderServiceImpl implements OrderService {
             }
             log.info("Inventory validation successful");
 
+            // Delay for testing cancel functionality
+            log.info("Waiting 3 seconds before creating order...");
+            Thread.sleep(3000);
+
             // After validation, create order in the database
             log.info("Step 2: Creating order in database...");
             OrderResponseDto orderResponse = createOrderTransaction(orderCreateRequestDTO, user);
             order = orderMapper.selectById(orderResponse.getOrderId());
             log.info("Order created with ID: {}", order.getId());
+            log.info("Order Status: PENDING_VALIDATION (immediately visible for queries and cancel)");
 
-            // Step 3: Reserve stock for each item
+            // Delay for testing cancel functionality
+            log.info("Waiting 3 seconds before reserving stock...");
+            Thread.sleep(3000);
+
+            // Check if order was cancelled during the delay
+            order = orderMapper.selectById(order.getId());
+            if ("CANCELLED".equals(order.getStatus())) {
+                log.info("Order {} was cancelled by user. Stopping order placement (no rollback needed, cancel method already handled it).", order.getId());
+                return Result.success("Order was cancelled during processing.", null);
+            }
+
+            // Step 3: Reserve stock for each item with intelligent warehouse allocation
             reservationId = null;
             for (OrderItemRequestDTO item : orderCreateRequestDTO.getItems()) {
-                // build allocation with entire quantity to one warehouse (simple strategy)
-                List<WarehouseAllocation> warehouseAllocations = new ArrayList<>();
-                warehouseAllocations.add(new WarehouseAllocation(1L, item.getQuantity())); // default warehouseId 1 for now
+                // Check stock availability and get intelligent warehouse allocation
+                CheckAvailabilityRequest availabilityRequest = new CheckAvailabilityRequest(
+                    item.getProductId(),
+                    item.getQuantity()
+                );
+
+                Result<StockAvailabilityResponse> availabilityResult = warehouseClient.checkAvailability(availabilityRequest);
+                if (availabilityResult.getCode() != 200 || availabilityResult.getData() == null || !availabilityResult.getData().getAvailable()) {
+                    log.error("Stock not available for productId {}: {}", item.getProductId(),
+                        availabilityResult.getData() != null ? availabilityResult.getData().getTotalAvailableQuantity() : 0);
+                    updateOrderStatusImmediate(order.getId(), "FAILED");
+                    sendOrderFailureNotification(order.getId(), user.getEmail(), "Insufficient inventory",
+                        "Stock not available for product " + item.getProductId());
+                    return Result.error(400, "Insufficient inventory for productId " + item.getProductId());
+                }
+
+                StockAvailabilityResponse availability = availabilityResult.getData();
+
+                // Build warehouse allocation from availability response (intelligent allocation)
+                List<WarehouseAllocation> warehouseAllocations = availability.getWarehouses().stream()
+                    .filter(wh -> wh.getAllocatedQuantity() != null && wh.getAllocatedQuantity() > 0)
+                    .map(wh -> new WarehouseAllocation(wh.getWarehouseId(), wh.getAllocatedQuantity()))
+                    .collect(Collectors.toList());
+
+                if (warehouseAllocations.isEmpty()) {
+                    log.error("No warehouse allocations available for productId {}", item.getProductId());
+                    updateOrderStatusImmediate(order.getId(), "FAILED");
+                    sendOrderFailureNotification(order.getId(), user.getEmail(), "Warehouse allocation failed",
+                        "No warehouse can fulfill product " + item.getProductId());
+                    return Result.error(400, "Warehouse allocation failed for productId " + item.getProductId());
+                }
+
+                log.info("Intelligent warehouse allocation for product {}: {} warehouse(s)",
+                    item.getProductId(), warehouseAllocations.size());
+
                 ReserveStockRequest reserveRequest = new ReserveStockRequest(
                     String.valueOf(order.getId()),
                     item.getProductId(),
@@ -101,8 +152,9 @@ public class OrderServiceImpl implements OrderService {
                     log.error("Failed to reserve stock for productId {}: {}", item.getProductId(), reserveResult.getMessage());
                     // Rollback: set FAILED, send notify, return error
                     updateOrderStatusImmediate(order.getId(), "FAILED");
-                    sendOrderFailureNotification(order.getId(), user.getEmail(), "Insufficient inventory", "Failed to reserve stock for product " + item.getProductId());
-                    return Result.error(400, "Insufficient inventory for productId " + item.getProductId());
+                    sendOrderFailureNotification(order.getId(), user.getEmail(), "Stock reservation failed",
+                        "Failed to reserve stock for product " + item.getProductId());
+                    return Result.error(400, "Failed to reserve stock for productId " + item.getProductId());
                 }
                 // use the first reservationId (for order-level tracking)
                 if (reservationId == null) {
@@ -116,11 +168,11 @@ public class OrderServiceImpl implements OrderService {
             orderMapper.updateById(order);
             log.info("Stock reserved with reservation ID: {}", reservationId);
             log.info("Order Status: PENDING_VALIDATION -> PENDING_PAYMENT (immediately visible for queries and cancel)");
-            
+
             // Delay for testing cancel functionality
-            log.info("Waiting 5 seconds before processing payment...");
-            Thread.sleep(5000);
-            
+            log.info("Waiting 3 seconds before processing payment...");
+            Thread.sleep(3000);
+
             // Check if order was cancelled during the delay
             order = orderMapper.selectById(order.getId());
             if ("CANCELLED".equals(order.getStatus())) {
@@ -145,10 +197,10 @@ public class OrderServiceImpl implements OrderService {
             paymentProcessed = true;
             log.info("Payment successful. Transaction ID: {}", paymentResult.getData().getId());
             log.info("Order Status: PENDING_PAYMENT -> PAYMENT_SUCCESSFUL (immediately visible for queries and cancel)");
-            
+
             // Delay for testing cancel functionality
-            log.info("Waiting 10 seconds before sending delivery request...");
-            Thread.sleep(10000);
+            log.info("Waiting 5 seconds before sending delivery request...");
+            Thread.sleep(5000);
             
             // Check if order was cancelled during the delay
             order = orderMapper.selectById(order.getId());
@@ -189,6 +241,10 @@ public class OrderServiceImpl implements OrderService {
                 try {
                     if (paymentProcessed) processRefund(order, user);
                     if (reservationId != null) releaseReservedStock(String.valueOf(order.getId()), reservationId, "Database error");
+
+                    // Send cancellation message to prevent delivery processing
+                    sendDeliveryCancellationMessage(order.getId(), user != null ? user.getEmail() : "", "Database error during order placement");
+
                     updateOrderStatusImmediate(order.getId(), "FAILED");
                     sendOrderFailureNotification(order.getId(), user != null ? user.getEmail() : "", "Database service unavailable", dae.getMessage());
                 } catch (Exception rollbackEx) {
@@ -202,6 +258,10 @@ public class OrderServiceImpl implements OrderService {
                 try {
                     if (paymentProcessed) processRefund(order, user);
                     if (reservationId != null) releaseReservedStock(String.valueOf(order.getId()), reservationId, "RabbitMQ error");
+
+                    // Send cancellation message to prevent delivery processing
+                    sendDeliveryCancellationMessage(order.getId(), user != null ? user.getEmail() : "", "Message queue error during order placement");
+
                     updateOrderStatusImmediate(order.getId(), "FAILED");
                     sendOrderFailureNotification(order.getId(), user != null ? user.getEmail() : "", "Message queue service unreachable", mqEx.getMessage());
                 } catch (Exception rollbackEx) {
@@ -214,24 +274,112 @@ public class OrderServiceImpl implements OrderService {
             log.error("Remote Service Exception during order placement:", remoteEx);
             if (order != null) {
                 try {
-                    if (remoteMsg.contains("deliveryco")) {
+                    if (remoteMsg.contains("bank") || remoteMsg.contains("8084")) {
+                        // Bank service unavailable
+                        if (reservationId != null) releaseReservedStock(String.valueOf(order.getId()), reservationId, "Bank service unreachable");
+
+                        // Send cancellation message to prevent delivery processing
+                        sendDeliveryCancellationMessage(order.getId(), user != null ? user.getEmail() : "", "Bank service unavailable during order placement");
+
+                        updateOrderStatusImmediate(order.getId(), "FAILED");
+                        sendOrderFailureNotification(order.getId(), user != null ? user.getEmail() : "", "Payment service temporarily unavailable", "Unable to process payment at this time");
+                        return Result.error(503, "Payment service is currently unavailable. Please try again later.");
+
+                    } else if (remoteMsg.contains("deliveryco")) {
+                        // DeliveryCo service unavailable
                         if (paymentProcessed) processRefund(order, user);
                         if (reservationId != null) releaseReservedStock(String.valueOf(order.getId()), reservationId, "DeliveryCo unreachable");
+
+                        // Send cancellation message to prevent delivery processing when service restarts
+                        sendDeliveryCancellationMessage(order.getId(), user != null ? user.getEmail() : "", "DeliveryCo service unavailable during order placement");
+
                         updateOrderStatusImmediate(order.getId(), "FAILED");
-                        sendOrderFailureNotification(order.getId(), user != null ? user.getEmail() : "", "Delivery service unavailable, refund issued", remoteEx.getMessage());
-                        return Result.error(503, "Failed to connect to delivery service. Order failed and refunded! (DeliveryCo unavailable, refunded)");
-                    } else {
+                        String refundMsg = paymentProcessed ? "Payment has been refunded to your account." : "No payment was processed.";
+                        sendOrderFailureNotification(order.getId(), user != null ? user.getEmail() : "", "Delivery service temporarily unavailable", refundMsg);
+                        return Result.error(503, "Delivery service is currently unavailable. " + refundMsg);
+
+                    } else if (remoteMsg.contains("warehouse")) {
+                        // Warehouse service unavailable
                         if (paymentProcessed) processRefund(order, user);
-                        if (reservationId != null) releaseReservedStock(String.valueOf(order.getId()), reservationId, "Remote service error");
+                        if (reservationId != null) releaseReservedStock(String.valueOf(order.getId()), reservationId, "Warehouse service error");
+
+                        // Send cancellation message to prevent delivery processing
+                        sendDeliveryCancellationMessage(order.getId(), user != null ? user.getEmail() : "", "Warehouse service error during order placement");
+
                         updateOrderStatusImmediate(order.getId(), "FAILED");
-                        sendOrderFailureNotification(order.getId(), user != null ? user.getEmail() : "", "External service call failed", remoteEx.getMessage());
-                        return Result.error(504, "External service call failed, please try again later!");
+                        String refundMsg = paymentProcessed ? "Payment has been refunded to your account." : "No payment was processed.";
+                        sendOrderFailureNotification(order.getId(), user != null ? user.getEmail() : "", "Warehouse service temporarily unavailable", refundMsg);
+                        return Result.error(503, "Warehouse service is currently unavailable. " + refundMsg);
+
+                    } else {
+                        // Unknown external service error
+                        if (paymentProcessed) processRefund(order, user);
+                        if (reservationId != null) releaseReservedStock(String.valueOf(order.getId()), reservationId, "External service error");
+
+                        // Send cancellation message to prevent delivery processing
+                        sendDeliveryCancellationMessage(order.getId(), user != null ? user.getEmail() : "", "External service error during order placement");
+
+                        updateOrderStatusImmediate(order.getId(), "FAILED");
+                        String refundMsg = paymentProcessed ? "Payment has been refunded to your account." : "No payment was processed.";
+                        sendOrderFailureNotification(order.getId(), user != null ? user.getEmail() : "", "Service temporarily unavailable", refundMsg);
+                        return Result.error(503, "A required service is currently unavailable. " + refundMsg);
                     }
                 } catch (Exception rollbackEx) {
                     log.error("Error during rollback: {}", rollbackEx.getMessage(), rollbackEx);
                 }
             }
-            return Result.error(504, "External service call failed, please try again later!");
+            return Result.error(503, "Service temporarily unavailable. Please try again later.");
+        } catch (FeignException feignEx) {
+            String feignMsg = feignEx.getMessage() != null ? feignEx.getMessage().toLowerCase() : "";
+            int status = feignEx.status();
+            log.error("Feign Client Exception during order placement (status: {}): {}", status, feignEx.getMessage());
+
+            if (order != null) {
+                try {
+                    // Check which service based on request URL or message content
+                    if (feignMsg.contains("8084") || feignMsg.contains("bank")) {
+                        // Bank service error
+                        if (reservationId != null) releaseReservedStock(String.valueOf(order.getId()), reservationId, "Bank service error");
+                        sendDeliveryCancellationMessage(order.getId(), user != null ? user.getEmail() : "", "Bank service error");
+                        updateOrderStatusImmediate(order.getId(), "FAILED");
+                        sendOrderFailureNotification(order.getId(), user != null ? user.getEmail() : "", "Payment service temporarily unavailable", "Unable to process payment at this time");
+                        return Result.error(503, "Payment service is currently unavailable. Please try again later.");
+
+                    } else if (feignMsg.contains("8083") || feignMsg.contains("deliveryco")) {
+                        // DeliveryCo service error
+                        if (paymentProcessed) processRefund(order, user);
+                        if (reservationId != null) releaseReservedStock(String.valueOf(order.getId()), reservationId, "DeliveryCo error");
+                        sendDeliveryCancellationMessage(order.getId(), user != null ? user.getEmail() : "", "DeliveryCo service error");
+                        updateOrderStatusImmediate(order.getId(), "FAILED");
+                        String refundMsg = paymentProcessed ? "Payment has been refunded to your account." : "No payment was processed.";
+                        sendOrderFailureNotification(order.getId(), user != null ? user.getEmail() : "", "Delivery service temporarily unavailable", refundMsg);
+                        return Result.error(503, "Delivery service is currently unavailable. " + refundMsg);
+
+                    } else if (feignMsg.contains("8082") || feignMsg.contains("warehouse")) {
+                        // Warehouse service error
+                        if (paymentProcessed) processRefund(order, user);
+                        if (reservationId != null) releaseReservedStock(String.valueOf(order.getId()), reservationId, "Warehouse service error");
+                        sendDeliveryCancellationMessage(order.getId(), user != null ? user.getEmail() : "", "Warehouse service error");
+                        updateOrderStatusImmediate(order.getId(), "FAILED");
+                        String refundMsg = paymentProcessed ? "Payment has been refunded to your account." : "No payment was processed.";
+                        sendOrderFailureNotification(order.getId(), user != null ? user.getEmail() : "", "Warehouse service temporarily unavailable", refundMsg);
+                        return Result.error(503, "Warehouse service is currently unavailable. " + refundMsg);
+
+                    } else {
+                        // Unknown service error
+                        if (paymentProcessed) processRefund(order, user);
+                        if (reservationId != null) releaseReservedStock(String.valueOf(order.getId()), reservationId, "External service error");
+                        sendDeliveryCancellationMessage(order.getId(), user != null ? user.getEmail() : "", "External service error");
+                        updateOrderStatusImmediate(order.getId(), "FAILED");
+                        String refundMsg = paymentProcessed ? "Payment has been refunded to your account." : "No payment was processed.";
+                        sendOrderFailureNotification(order.getId(), user != null ? user.getEmail() : "", "Service temporarily unavailable", refundMsg);
+                        return Result.error(503, "A required service is currently unavailable. " + refundMsg);
+                    }
+                } catch (Exception rollbackEx) {
+                    log.error("Error during rollback: {}", rollbackEx.getMessage(), rollbackEx);
+                }
+            }
+            return Result.error(503, "Service temporarily unavailable. Please try again later.");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("Order placement interrupted: {}", e.getMessage());
@@ -244,6 +392,10 @@ public class OrderServiceImpl implements OrderService {
                     if (reservationId != null) {
                         releaseReservedStock(String.valueOf(order.getId()), reservationId, "Order interrupted");
                     }
+
+                    // Send cancellation message to prevent delivery processing
+                    sendDeliveryCancellationMessage(order.getId(), user != null ? user.getEmail() : "", "Order placement interrupted");
+
                     updateOrderStatusImmediate(order.getId(), "FAILED");
                     sendOrderFailureNotification(order.getId(), user.getEmail(), "Order interrupted", e.getMessage());
                 } catch (Exception rollbackEx) {
@@ -265,38 +417,43 @@ public class OrderServiceImpl implements OrderService {
         } catch (Exception e) {
             log.error("════════════════════════════════════════════════════════════");
             log.error("Order placement failed with exception: {}", e.getMessage(), e);
-            
+
             // Rollback actions
             if (order != null) {
                 try {
                     user = userMapper.selectById(orderCreateRequestDTO.getUserId());
-                    
+
                     // If payment was processed, refund it
                     if (paymentProcessed) {
                         log.info("Rolling back payment...");
                         processRefund(order, user);
                     }
-                    
+
                     // If stock was reserved, release it
                     if (reservationId != null) {
                         log.info("Releasing reserved stock...");
                         releaseReservedStock(String.valueOf(order.getId()), reservationId, "Order processing failed");
                     }
-                    
+
+                    // Send cancellation message to prevent delivery processing
+                    sendDeliveryCancellationMessage(order.getId(), user != null ? user.getEmail() : "", "Order processing failed with exception");
+
                     // Update order status
                     updateOrderStatusImmediate(order.getId(), "FAILED");
                     log.error("Order Status: -> FAILED (Reason: Exception occurred)");
-                    
-                    // Send failure notification
-                    sendOrderFailureNotification(order.getId(), user.getEmail(), "Order processing failed", e.getMessage());
-                    
+
+                    // Send failure notification with user-friendly message
+                    String refundMsg = paymentProcessed ? "Payment has been refunded to your account." : "No payment was processed.";
+                    sendOrderFailureNotification(order.getId(), user.getEmail(), "Order processing failed", refundMsg);
+
                 } catch (Exception rollbackEx) {
                     log.error("Error during rollback: {}", rollbackEx.getMessage(), rollbackEx);
                 }
             }
-            
+
             log.error("════════════════════════════════════════════════════════════");
-            return Result.error(500, "Order placement failed: " + e.getMessage());
+            // Return user-friendly error message without technical details
+            return Result.error(500, "An unexpected error occurred while processing your order. Please try again later.");
         }
     }
 
@@ -371,23 +528,134 @@ public class OrderServiceImpl implements OrderService {
                 log.info("Refund notification sent");
             }
             
+            // Send delivery cancellation message to queue
+            DeliveryCancellationDto cancellation = DeliveryCancellationDto.builder()
+                    .orderId(order.getId())
+                    .reason("Order cancelled by customer")
+                    .timestamp(LocalDateTime.now())
+                    .customerEmail(user.getEmail())
+                    .build();
+            messagePublisher.publishDeliveryCancellation(cancellation);
+            log.info("Delivery cancellation message sent to queue");
+
             // Update order status
             String oldStatusCancel = order.getStatus();
             order.setStatus("CANCELLED");
             order.setUpdateTime(LocalDateTime.now());
             orderMapper.updateById(order);
             log.info("Order Status: {} -> CANCELLED", oldStatusCancel);
-            
+
             log.info("════════════════════════════════════════════════════════════");
             log.info("Order cancellation completed successfully!");
             log.info("Order ID: {}, Status: CANCELLED", order.getId());
             log.info("════════════════════════════════════════════════════════════");
-            
+
             return Result.success("Order cancelled successfully. Refund processed.", null);
             
         } catch (Exception e) {
             log.error("Order cancellation failed: {}", e.getMessage(), e);
             return Result.error(500, "Order cancellation failed: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void cancelOrderDueToTimeout(Long orderId, String reason) {
+        log.info("════════════════════════════════════════════════════════════");
+        log.info("AUTO-CANCELLATION DUE TO TIMEOUT: Order {}", orderId);
+        log.info("Reason: {}", reason);
+
+        try {
+            // Get order
+            Order order = orderMapper.selectById(orderId);
+            if (order == null) {
+                log.error("Order {} not found for timeout cancellation", orderId);
+                return;
+            }
+
+            // Check if already cancelled or in a terminal state
+            if ("CANCELLED".equals(order.getStatus()) ||
+                "FAILED".equals(order.getStatus()) ||
+                "DELIVERED".equals(order.getStatus())) {
+                log.info("Order {} is already in terminal state: {}", orderId, order.getStatus());
+                return;
+            }
+
+            // Get user information
+            User user = userMapper.selectById(order.getUserId());
+            if (user == null) {
+                log.error("User {} not found for order {}", order.getUserId(), orderId);
+                return;
+            }
+
+            // Release reserved stock if reservation exists
+            if (order.getReservationId() != null) {
+                log.info("Releasing reserved stock...");
+                try {
+                    releaseReservedStock(String.valueOf(order.getId()), order.getReservationId(), reason);
+                    log.info("Stock released successfully");
+                } catch (Exception e) {
+                    log.error("Failed to release stock: {}", e.getMessage(), e);
+                }
+            }
+
+            // Process refund if payment was made
+            boolean refundProcessed = false;
+            if (("PAYMENT_SUCCESSFUL".equals(order.getStatus()) ||
+                 "DELIVERY_REQUESTED".equals(order.getStatus())) &&
+                order.getTransactionId() != null) {
+                log.info("Processing refund...");
+                try {
+                    Result<TransactionDto> refundResult = processRefund(order, user);
+
+                    if (refundResult.getCode() == 200) {
+                        log.info("Refund processed successfully");
+                        refundProcessed = true;
+
+                        // Send refund notification
+                        RefundNotificationDto refundNotification = RefundNotificationDto.builder()
+                                .orderId(order.getId())
+                                .customerEmail(user.getEmail())
+                                .amount((double) order.getTotalAmount())
+                                .timestamp(LocalDateTime.now())
+                                .reason(reason)
+                                .build();
+                        messagePublisher.publishRefundNotification(refundNotification);
+                        log.info("Refund notification sent");
+                    } else {
+                        log.error("Refund failed: {}", refundResult.getMessage());
+                    }
+                } catch (Exception e) {
+                    log.error("Failed to process refund: {}", e.getMessage(), e);
+                }
+            }
+
+            // Send delivery cancellation message to queue
+            DeliveryCancellationDto cancellation = DeliveryCancellationDto.builder()
+                    .orderId(order.getId())
+                    .reason(reason)
+                    .timestamp(LocalDateTime.now())
+                    .customerEmail(user.getEmail())
+                    .build();
+            messagePublisher.publishDeliveryCancellation(cancellation);
+            log.info("Delivery cancellation message sent to queue due to timeout");
+
+            // Update order status to FAILED (not CANCELLED, to indicate system timeout)
+            String oldStatus = order.getStatus();
+            order.setStatus("FAILED");
+            order.setUpdateTime(LocalDateTime.now());
+            orderMapper.updateById(order);
+            log.info("Order Status: {} -> FAILED (timeout)", oldStatus);
+
+            // Send failure notification
+            String notificationMessage = reason + (refundProcessed ? " Refund has been processed." : "");
+            sendOrderFailureNotification(order.getId(), user.getEmail(), "Service Unavailable", notificationMessage);
+
+            log.info("════════════════════════════════════════════════════════════");
+            log.info("Auto-cancellation completed for order: {}", orderId);
+            log.info("════════════════════════════════════════════════════════════");
+
+        } catch (Exception e) {
+            log.error("Failed to cancel order {} due to timeout: {}", orderId, e.getMessage(), e);
         }
     }
 
@@ -789,6 +1057,31 @@ public class OrderServiceImpl implements OrderService {
             order.setStatus(newStatus);
             order.setUpdateTime(LocalDateTime.now());
             orderMapper.updateById(order);
+        }
+    }
+
+    /**
+     * Send delivery cancellation message to prevent processing of cancelled orders
+     * This method safely sends cancellation messages and logs errors without throwing exceptions
+     *
+     * @param orderId Order ID to cancel
+     * @param customerEmail Customer email for notifications
+     * @param reason Cancellation reason
+     */
+    private void sendDeliveryCancellationMessage(Long orderId, String customerEmail, String reason) {
+        try {
+            DeliveryCancellationDto cancellation = DeliveryCancellationDto.builder()
+                    .orderId(orderId)
+                    .reason(reason)
+                    .timestamp(LocalDateTime.now())
+                    .customerEmail(customerEmail != null ? customerEmail : "")
+                    .build();
+            messagePublisher.publishDeliveryCancellation(cancellation);
+            log.info("Delivery cancellation message sent for order {}: {}", orderId, reason);
+        } catch (Exception e) {
+            // Don't throw exception - just log the error
+            // We don't want to fail the order cancellation process just because we couldn't send the message
+            log.error("Failed to send delivery cancellation message for order {}: {}", orderId, e.getMessage());
         }
     }
 }

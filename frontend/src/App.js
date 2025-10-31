@@ -109,9 +109,9 @@ class App extends Component {
             <Route path="/" element={currentUser ? <ProductList /> : <Login />} />
             <Route path="/login" element={<Login onLoginSuccess={this.updateUser} />} />
             <Route path="/register" element={<Register />} />
-            <Route path="/products" element={<ProductList />} />
-            <Route path="/checkout" element={<Checkout />} />
-            <Route path="/order/:orderId" element={<OrderTracking />} />
+            <Route path="/products" element={currentUser ? <ProductList /> : <Login />} />
+            <Route path="/checkout" element={currentUser ? <Checkout /> : <Login />} />
+            <Route path="/order/:orderId" element={currentUser ? <OrderTracking /> : <Login />} />
             <Route path="/orders" element={currentUser ? <OrderList /> : <Login />} />
             <Route path="/balance" element={currentUser ? <Balance /> : <Login />} />
           </Routes>

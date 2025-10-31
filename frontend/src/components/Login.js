@@ -39,6 +39,16 @@ export default class Login extends Component {
 
     AuthService.login(this.state.username, this.state.password)
       .then(response => {
+        // Check if login was successful by checking the code field
+        if (response.data.code !== 200) {
+          // Login failed
+          this.setState({
+            loading: false,
+            message: response.data.message || 'Login failed'
+          });
+          return;
+        }
+
         const token = response.data.data || response.data;
         localStorage.setItem('token', token);
 
@@ -51,6 +61,11 @@ export default class Login extends Component {
           }));
         } catch (e) {
           console.error('Failed to decode token:', e);
+          this.setState({
+            loading: false,
+            message: 'Invalid token received'
+          });
+          return;
         }
 
         window.location.href = '/products';

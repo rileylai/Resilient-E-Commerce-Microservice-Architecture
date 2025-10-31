@@ -3,8 +3,14 @@ CREATE DATABASE IF NOT EXISTS warehouse CHARACTER SET utf8mb4 COLLATE utf8mb4_un
 
 USE warehouse;
 
+-- Drop existing tables to ensure clean state
+DROP TABLE IF EXISTS stock_reservation;
+DROP TABLE IF EXISTS inventory;
+DROP TABLE IF EXISTS product;
+DROP TABLE IF EXISTS warehouse;
+
 -- Warehouse Table
-CREATE TABLE IF NOT EXISTS warehouse (
+CREATE TABLE warehouse (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     address VARCHAR(255) NOT NULL,
@@ -15,7 +21,7 @@ CREATE TABLE IF NOT EXISTS warehouse (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Product Table
-CREATE TABLE IF NOT EXISTS product (
+CREATE TABLE product (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(200) NOT NULL,
     description TEXT,
@@ -26,7 +32,7 @@ CREATE TABLE IF NOT EXISTS product (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Inventory Table
-CREATE TABLE IF NOT EXISTS inventory (
+CREATE TABLE inventory (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     warehouse_id BIGINT NOT NULL,
     product_id BIGINT NOT NULL,
@@ -45,7 +51,7 @@ CREATE TABLE IF NOT EXISTS inventory (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- StockReservation Table
-CREATE TABLE IF NOT EXISTS stock_reservation (
+CREATE TABLE stock_reservation (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     order_id VARCHAR(100) NOT NULL,
     warehouse_id BIGINT NOT NULL,

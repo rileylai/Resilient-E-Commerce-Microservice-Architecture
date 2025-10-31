@@ -72,18 +72,48 @@ public class DeliveryServiceImpl implements DeliveryService {
         // createdAt and updatedAt are auto-filled by MyBatis-Plus MetaObjectHandler
 
         // Save to database
-        deliveryRepository.insert(delivery);
+        try {
+            deliveryRepository.insert(delivery);
 
-        log.info("[{}] Delivery created successfully - DeliveryID: {}, OrderID: {}, Status: REQUEST_RECEIVED",
-                getCurrentTimestamp(),
-                delivery.getId(),
-                delivery.getOrderId());
+            log.info("[{}] Delivery created successfully - DeliveryID: {}, OrderID: {}, Status: REQUEST_RECEIVED",
+                    getCurrentTimestamp(),
+                    delivery.getId(),
+                    delivery.getOrderId());
 
-        // Send initial status notification
-        sendStatusUpdateNotification(delivery, request.getCustomerEmail(),
-                "Delivery request received. Your order is being processed.");
+            // Send initial status notification
+            sendStatusUpdateNotification(delivery, request.getCustomerEmail(),
+                    "Delivery request received. Your order is being processed.");
 
-        return delivery;
+            return delivery;
+
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // Another thread (cancellation) inserted a CANCELLED record at the same time
+            // Re-query to check if it's cancelled
+            log.warn("[{}] Concurrent insert detected for order {}. Re-querying to check status.",
+                    getCurrentTimestamp(),
+                    request.getOrderId());
+
+            Delivery existingDelivery = deliveryRepository.findByOrderId(request.getOrderId());
+            if (existingDelivery != null) {
+                if (existingDelivery.getStatus() == DeliveryStatus.CANCELLED) {
+                    log.warn("[{}] Order {} was CANCELLED by another thread. Skipping delivery processing.",
+                            getCurrentTimestamp(),
+                            request.getOrderId());
+                    return existingDelivery; // Return the cancelled delivery without processing
+                } else {
+                    log.info("[{}] Delivery already exists with status: {}. Returning existing delivery.",
+                            getCurrentTimestamp(),
+                            existingDelivery.getStatus());
+                    return existingDelivery;
+                }
+            } else {
+                // This shouldn't happen, but handle it gracefully
+                log.error("[{}] Duplicate key error but no delivery found for order {}",
+                        getCurrentTimestamp(),
+                        request.getOrderId());
+                throw new RuntimeException("Failed to create delivery due to concurrent modification");
+            }
+        }
     }
 
     @Override

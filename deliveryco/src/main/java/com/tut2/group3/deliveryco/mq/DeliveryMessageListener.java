@@ -3,6 +3,8 @@ package com.tut2.group3.deliveryco.mq;
 import com.tut2.group3.deliveryco.config.RabbitMQConfig;
 import com.tut2.group3.deliveryco.dto.DeliveryRequestDTO;
 import com.tut2.group3.deliveryco.entity.Delivery;
+import com.tut2.group3.deliveryco.entity.enums.DeliveryStatus;
+import com.tut2.group3.deliveryco.repository.DeliveryRepository;
 import com.tut2.group3.deliveryco.service.DeliveryService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -24,6 +26,9 @@ public class DeliveryMessageListener {
 
     @Autowired
     private DeliveryService deliveryService;
+
+    @Autowired
+    private DeliveryRepository deliveryRepository;
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -49,6 +54,22 @@ public class DeliveryMessageListener {
         log.info("════════════════════════════════════════════════════════════════");
 
         try {
+            // Check if delivery already exists (and might be cancelled)
+            Delivery existingDelivery = deliveryRepository.findByOrderId(request.getOrderId());
+            if (existingDelivery != null) {
+                if (existingDelivery.getStatus() == DeliveryStatus.CANCELLED) {
+                    log.warn("[{}] Order {} was CANCELLED. Skipping delivery processing.",
+                            getCurrentTimestamp(), request.getOrderId());
+                    log.warn("════════════════════════════════════════════════════════════════");
+                    return;
+                } else {
+                    log.info("[{}] Delivery for Order {} already exists with status: {}. Skipping.",
+                            getCurrentTimestamp(), request.getOrderId(), existingDelivery.getStatus());
+                    log.info("════════════════════════════════════════════════════════════════");
+                    return;
+                }
+            }
+
             // Create delivery record and send initial notification
             Delivery delivery = deliveryService.createDelivery(request);
 
