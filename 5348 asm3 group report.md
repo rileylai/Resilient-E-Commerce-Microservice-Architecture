@@ -285,17 +285,235 @@ To protect against data loss, all RabbitMQ queues and exchanges are marked as du
 
 Because each service has its own queue, services can scale independently. For example, if the EmailService becomes very busy, it can add more workers without affecting the Store or DeliveryCo. This design also helps teams monitor the system better, because each queue shows a clear view of what messages are waiting or failing. If new services are added in the future, they can easily join by creating a new queue and connecting it to the right routing key, without changing existing services.
 
-#### 4.7 Summary
+#### 4.7 Protocol Selection Rationale
+
+The Store system uses different communication protocols based on interaction patterns and quality requirements:
+
+**REST APIs (Synchronous Communication):**
+- Used for Bank and Warehouse service interactions where immediate response is required
+- Chosen for its simplicity, statelessness, and widespread support in modern web services
+- Preferred over SOAP due to lower overhead, easier debugging with JSON payloads, and better alignment with microservices principles
+- Suitable for operations requiring immediate confirmation such as payment processing and stock validation
+
+**RabbitMQ Message Queues (Asynchronous Communication):**
+- Used for DeliveryCo and EmailService interactions where immediate response is not critical
+- Provides reliability through durable queues, automatic retry mechanisms, and message persistence
+- Enables service decoupling, allowing services to operate independently even when consumers are temporarily unavailable
+- Supports event-driven architecture for non-blocking operations such as delivery status updates and email notifications
+
+This hybrid approach balances request-response reliability (REST) with asynchronous resilience (messaging), ensuring both operational efficiency and system robustness. The protocol choice for each integration point is driven by whether the operation requires synchronous confirmation or can benefit from asynchronous processing.
+
+#### 4.8 Summary
 
 In summary, the system uses a well-structured messaging design where each microservice owns its own queue. This approach improves stability, allows each service to grow independently, and makes the overall system easier to maintain. It also ensures that communication between services is reliable and that errors can be handled gracefully without stopping the user experience.
 
 
 ## 5. Fault Tolerance and Availability
-- **Failure Scenario 1: Bank Unavailable**
-  - Retry strategy, async queue fallback
-- **Failure Scenario 2: DeliveryCo loses package**
-  - Email alert, status update
-- Logging mechanism with timestamps for observability
+
+### 5.1 Overview of Fault Tolerance Strategy
+
+The Store microservice maintains operational continuity through three core mechanisms: graceful degradation with compensating actions, comprehensive exception handling for different service failures, and automatic rollback to maintain data consistency. 
+
+---
+
+### 5.2 Failure Scenario 1: Bank Service Unavailable
+
+#### 5.2.1 Scenario Description
+
+This failure occurs when the Bank service is unavailable during payment processing, after stock has already been reserved. This is critical because inventory could remain locked while customers receive no feedback.
+
+#### 5.2.2 Detection Mechanism
+
+The system detects Bank service failures through network communication exceptions. When the payment request cannot reach the Bank service or receives error responses, the failure is immediately identified and triggers the recovery workflow.
+
+#### 5.2.3 Compensating Actions
+
+The system executes four automatic compensating actions:
+
+1. **Release Reserved Stock**: Returns inventory to available pool for other customers
+2. **Prevent Delivery**: Sends cancellation notification to delivery service
+3. **Update Order Status**: Marks order as "FAILED" with immediate database commit
+4. **Notify Customer**: Queues email notification explaining the failure
+
+#### 5.2.4 Data Consistency
+
+Since failure occurs **before** payment processing, no refund is required. The system ensures consistency across all components:
+
+| Component | State After Failure | Result |
+|-----------|---------------------|--------|
+| Order Record | Status = "FAILED" | Preserved for audit |
+| Warehouse | Stock released | Inventory available |
+| Bank | No transaction | Customer not charged |
+| Customer | Email sent | Informed to retry |
+
+#### 5.2.5 Logging
+
+All operations are logged with timestamps showing the complete failure sequence, enabling root cause analysis and customer support.
+
+---
+
+### 5.3 Failure Scenario 2: Package Loss by DeliveryCo
+
+#### 5.3.1 Scenario Description
+
+After successful payment and delivery request, DeliveryCo may lose packages (5% probability). This requires automatic refund processing since payment was already completed.
+
+#### 5.3.2 Event-Driven Detection
+
+The system uses asynchronous message listening to detect package loss:
+- Continuously monitors delivery status update messages
+- Identifies "LOST" status from delivery service
+- Non-blocking, event-driven architecture
+- Durable message queue ensures reliability
+
+#### 5.3.3 Automated Recovery Workflow
+
+Four-step recovery process:
+
+1. **Validate Order State**: Verifies order exists and can process loss event
+
+2. **Automatic Refund with Idempotency**:
+   - Sends refund request to Bank service
+   - Uses unique identifier to prevent duplicate refunds
+   - Protected against message redelivery
+
+3. **Update Order Status**: Changes to "LOST" with precise timestamp
+
+4. **Email Notification**: Queues refund details for customer notification
+
+#### 5.3.4 Idempotency Protection
+
+The idempotency mechanism ensures:
+- Duplicate status messages don't cause double refunds
+- Bank service rejects duplicate refund requests
+- Financial accuracy maintained during retries
+- No business risk from message redelivery
+
+#### 5.3.5 Data Integrity
+
+Post-loss state across services:
+
+| Component | Final State | Note |
+|-----------|-------------|------|
+| Order | Status = "LOST" | Complete audit trail |
+| Bank | Refund completed | Balance restored |
+| Warehouse | Stock decremented | Cannot return shipped items |
+| Customer | Refund notification sent | Informed of resolution |
+
+**Stock Not Returned**: Physical items were already shipped and lost, matching real-world inventory management.
+
+#### 5.3.6 Logging
+
+Structured logs track the complete recovery timeline from loss detection through refund completion, supporting monitoring and auditing requirements.
+
+---
+
+### 5.4 Failure Scenario 3: Order Processing Timeout (Proactive Rollback)
+
+#### 5.4.1 Scenario Description
+
+This failure scenario addresses a critical but often overlooked problem: when external services hang or respond extremely slowly **without throwing exceptions**, orders become "stuck" in intermediate states. Unlike explicit service failures, these "silent failures" don't trigger exception handlers but still lock resources indefinitely.
+
+This represents a **proactive fault tolerance approach** rather than reactive exception handling, demonstrating advanced system monitoring and self-healing capabilities.
+
+#### 5.4.2 Detection Mechanism
+
+The system uses scheduled background monitoring to actively detect stalled orders:
+
+**Monitoring Strategy:**
+- Periodic scanning every **5 seconds** to check order processing states
+- Examines all orders in intermediate states: validating, awaiting payment, or pending delivery
+- Calculates time elapsed since last status update
+- Triggers automatic rollback when elapsed time **exceeds 15 seconds**
+
+This detection is fundamentally different from Scenarios 1 and 2:
+- **Scenario 1 & 2**: Exception-driven (reactive)
+- **Scenario 3**: Time-driven (proactive)
+
+#### 5.4.3 Stage-Aware Rollback Strategy
+
+The rollback logic intelligently adapts based on order progression stage:
+
+**1. Timeout Before Payment**:
+- **Action**: Release reserved stock only
+- **Status Update**: Change to "CANCELLED"
+- **Notification**: Timeout explanation sent to customer
+- **No Refund**: Payment was never processed
+- **Use Case**: Warehouse service hanging during stock check
+
+**2. Timeout After Payment**:
+- **Action**: Initiate automatic refund + release stock
+- **Idempotency Protection**: Uses unique identifier to prevent duplicate refunds
+- **Status Update**: Change to "CANCELLED"
+- **Notification**: Refund notification sent to customer
+- **Use Case**: Delivery service hanging after payment completed
+
+#### 5.4.4 Key Benefits and Innovation
+
+**Resource Protection:**
+- Prevents indefinite inventory locking when services hang
+- Ensures customer funds are returned promptly if order can't complete
+- Maintains database cleanliness (no perpetual "processing" orders)
+
+**Proactive vs Reactive:**
+- Most systems only handle explicit failures (exceptions)
+- This mechanism catches implicit failures (service degradation, hangs)
+- Complements exception handling for comprehensive coverage
+
+**System Observability:**
+- Timeout patterns reveal slow/degraded services before complete failure
+- Enables early intervention for performance issues
+- Supports SLA monitoring through defined timeout threshold
+
+#### 5.4.5 Logging and Monitoring
+
+Structured logs track timeout detection and recovery, enabling performance analysis to identify which services frequently timeout, capacity planning to detect overloaded services, and customer support explanations for auto-cancelled orders.
+
+---
+
+### 5.5 Additional Resilience Mechanisms
+
+#### 5.5.1 Other Failure Scenarios Handled
+
+The system also handles additional failure scenarios through similar compensating action patterns:
+- **Database Failures**: Complete rollback when database becomes unavailable
+- **Message Queue Failures**: REST-based rollback when messaging system fails
+- **Warehouse/Delivery Service Unavailable**: Service-specific compensating actions
+
+#### 5.5.2 Durable Messaging Infrastructure
+
+Message queue configuration ensures reliability:
+- All queues and exchanges marked as persistent
+- Messages survive system restarts without data loss
+- Enables asynchronous communication without blocking operations
+
+#### 5.5.3 Transaction Isolation
+
+Independent transaction boundaries for critical updates:
+- Status changes committed immediately in separate transactions
+- Ensures concurrent queries see updated state instantly
+- Prevents cascading failures across operations
+
+#### 5.5.4 Comprehensive Logging
+
+Structured logging strategy provides:
+- Step-by-step operation tracking with timestamps
+- Complete transaction history for auditing
+- Full error details for debugging
+- Support for monitoring and alerting systems
+
+---
+
+### 5.6 Summary
+
+The Store microservice implements comprehensive fault tolerance through three major failure scenarios and supporting resilience mechanisms:
+
+**Three-Tiered Failure Handling:**
+1. **Reactive Exception Handling**: Bank and Warehouse service failures (Scenarios 1 & 2)
+2. **Event-Driven Recovery**: Package loss detection and automatic refund (Scenario 2)
+3. **Proactive Monitoring**: Timeout detection and auto-rollback (Scenario 3)
+
+This multi-layered approach ensures the system handles both explicit failures (exceptions) and implicit failures (service degradation), providing robust fault tolerance through specific exception handling, automatic compensating actions, durable messaging, idempotency protection, and comprehensive logging. The design balances availability, consistency, and user experience, ensuring graceful handling of real-world distributed failures while maintaining data integrity across all services.
 
 ### 6. Quality Attributes and Trade-Offs
 
@@ -308,20 +526,40 @@ To ensure high availability, the Store service processes customer orders as soon
 #### 6.2 Performance vs. Reliability
 
 We use asynchronous messaging to separate time-sensitive features like payment and delivery updates from the core ordering flow. This improves system responsiveness and allows the Store service to operate smoothly under high load. Messages are retried if delivery fails, and unprocessed messages are sent to a dead-letter queue for later inspection. These patterns increase reliability but may introduce small delays in edge cases. Developers must design message handlers to be idempotent and monitor retry queues to avoid message overload. While this setup slightly reduces raw performance, it ensures that most user operations complete successfully, even during temporary failures or system spikes.
+The service employs Spring transaction propagation behavior in a highly professional manner:
+Using `@Transactional(propagation = Propagation.REQUIRES_NEW)` ensures critical state updates become immediately visible.
+For example: methods like `createOrderTransaction`, `processPaymentAndUpdateStatus`, etc.
+This guarantees order status visibility to queries without requiring the entire transaction to complete.
 
 #### 6.3 Modularity vs. Complexity
 
 Each major domain—such as inventory, payments, delivery, and email—is implemented as an independent microservice. This modular structure allows teams to develop and deploy each service separately, improving flexibility and maintainability. Internally, each microservice follows a layered architecture that separates controllers, services, and data mappers. This design improves code clarity and testing, but it also adds complexity. Developers must understand the interactions between layers and between services, which can make onboarding and debugging more difficult. To address this, we rely on centralized logging, distributed tracing, and clear documentation across all services.
+Message-Driven Decoupled Architecture
+Use MessagePublisher to publish messages, decoupling from external systems (delivery, notifications)
+Examples: publishDeliveryRequest, publishRefundNotification, publishDeliveryCancellation
+This enhances system flexibility, enabling easy expansion or replacement of message publishing mechanisms
 
 #### 6.4 Extensibility vs. Integration Overhead
 
 The system is built with future growth in mind. By using event-driven communication, new services can be added without changing existing ones. For example, a future analytics or audit service could subscribe to current message queues and begin working immediately. However, this flexibility also brings the need for careful coordination. Message schemas must remain stable and clearly documented to avoid breaking existing consumers. We use generalized Data Transfer Objects (DTOs) to promote reuse, but each new consumer must validate the message content properly to avoid errors. With good schema governance, this trade-off allows the system to grow easily without risking system stability.
 
-#### 6.5 Summary
+#### 6.5 Detailed Logging and Testing
+The service records detailed logs, including key steps and state transitions.
+For example:
+log.info(“Inventory validation successful”),
+log.info(“Stock reserved with reservation ID: {}”, reservationId)
+This significantly enhances monitorability and debugging capabilities.
+The code includes multiple Thread.sleep calls to test the cancellation functionality.
+For example: Delays are implemented at critical steps such as after inventory verification, after inventory reservation, and after payment.
+This enables simulating cancellation operations during order processing in both development and testing phases.
+
+#### 6.6 Summary
 
 Overall, the Store microservice architecture favors availability, reliability, and flexibility to support a smooth and scalable e-commerce experience. To achieve these goals, we accept certain trade-offs, such as temporary inconsistency, moderate latency from message queuing, and added complexity in service interactions. These design decisions reflect a careful balance that enables the system to perform well under real-world demands while remaining easy to extend and maintain over time.
 
 ### 7. ORM & Tiered Architecture Discussion
+
+**Note**: This section addresses Question 3 from the assignment requirements. Please refer to Appendix A.1 for the complete Store Service ERD diagram that supports the following architectural analysis.
 
 #### 7.1 Impact of ORM on Tiered Architecture
 
@@ -350,5 +588,62 @@ Finally, the architecture is scalable and ready for future growth. New services 
 In summary, this system balances availability, consistency, and flexibility. It delivers a strong foundation for modern online stores, supporting high traffic, system evolution, and graceful handling of real-world challenges.
 
 ## Appendix
-- ERD Diagram
-- Sequence Diagrams (optional)
+
+### A. Entity-Relationship Diagrams
+
+#### A.1 Store Service Database Schema
+
+![Store Service ERD](Store-er.png)
+
+**Figure 1: Store Service Entity-Relationship Diagram**
+
+**Purpose**:
+This diagram illustrates the database schema of the Store microservice and is used to analyze how the ORM framework (MyBatis-Plus) affects the implementation of tiered architecture, as required by Question 3.
+
+**Tables and Relationships**:
+
+1. **users** table:
+   - `id` (bigint, PK): Auto-incrementing primary key
+   - `user_name` (varchar(255), NN): Username for authentication
+   - `password` (varchar(255), NN): Hashed password (never stored in plain text)
+   - `email` (varchar(255), NN): User email for notifications
+
+2. **orders** table:
+   - `id` (bigint, PK): Auto-incrementing primary key
+   - `user_id` (bigint, NN, FK): Foreign key referencing users.id
+   - `status` (varchar(50), NN): Order lifecycle status (PENDING_VALIDATION, PENDING_PAYMENT, PAYMENT_SUCCESSFUL, DELIVERY_REQUESTED, COMPLETED, CANCELLED, FAILED, LOST)
+   - `total_amount` (double, NN): Total order amount in currency
+   - `reservation_id` (varchar(255)): Logical reference to Warehouse service reservation
+   - `transaction_id` (varchar(255)): Logical reference to Bank service transaction
+   - `create_time` (datetime, NN): Order creation timestamp
+   - `update_time` (datetime, NN): Last status update timestamp
+
+3. **order_item** table:
+   - `id` (bigint, PK): Auto-incrementing primary key
+   - `order_id` (bigint, NN, FK): Foreign key referencing orders.id
+   - `product_id` (bigint, NN): Product identifier from Warehouse service
+   - `product_name` (varchar(255), NN): Product name snapshot at order time
+   - `quantity` (int, NN): Quantity ordered
+   - `price` (double, NN): Price per unit at time of order
+
+**Relationships**:
+- **users (1) → orders (N)**: One user can place multiple orders. Relationship enforced by `orders.user_id` foreign key.
+- **orders (1) → order_item (N)**: One order contains multiple line items. Relationship enforced by `order_item.order_id` foreign key.
+
+**Cross-Service Logical References** (Not Database Foreign Keys):
+- `orders.reservation_id`: Links to Warehouse service inventory reservation (logical reference only)
+- `orders.transaction_id`: Links to Bank service payment transaction (logical reference only)
+
+These fields represent eventual consistency in microservices architecture. They are NOT database foreign keys because each microservice maintains its own independent database, following the "Database per Service" pattern.
+
+**Relevance to Question 3 (ORM and Tiered Architecture)**:
+
+This ERD reveals several architectural characteristics of our Store service:
+
+1. **Clear Entity Mapping**: Each table maps directly to a Java Entity class (User.java, Order.java, OrderItem.java) using MyBatis-Plus `@TableName` annotation.
+
+2. **Relationship Handling**: Unlike JPA/Hibernate, MyBatis-Plus does not manage object relationships with `@OneToMany` or `@ManyToOne` annotations. The ERD shows clear database-level relationships (foreign keys), but our Entity classes do not reflect these relationships in code. Instead, we manually assemble related data in the Service layer.
+
+3. **Cross-Service Integration**: The presence of `reservation_id` and `transaction_id` fields demonstrates how the data model accommodates microservices integration. These fields blur the boundary between the data model (Entity layer) and the integration model (Service layer), which is a conscious trade-off in distributed systems.
+
+4. **Missing Repository Layer**: The ERD helps identify that our Service layer directly calls Mapper interfaces (e.g., `orderMapper.selectById()`), skipping a dedicated Repository layer. While this is acceptable with MyBatis-Plus's BaseMapper, it does blur the boundary between business logic and data access.
