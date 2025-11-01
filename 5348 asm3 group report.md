@@ -645,5 +645,3 @@ This ERD reveals several architectural characteristics of our Store service:
 2. **Relationship Handling**: Unlike JPA/Hibernate, MyBatis-Plus does not manage object relationships with `@OneToMany` or `@ManyToOne` annotations. The ERD shows clear database-level relationships (foreign keys), but our Entity classes do not reflect these relationships in code. Instead, we manually assemble related data in the Service layer.
 
 3. **Cross-Service Integration**: The presence of `reservation_id` and `transaction_id` fields demonstrates how the data model accommodates microservices integration. These fields blur the boundary between the data model (Entity layer) and the integration model (Service layer), which is a conscious trade-off in distributed systems.
-
-4. **Missing Repository Layer**: The ERD helps identify that our Service layer directly calls Mapper interfaces (e.g., `orderMapper.selectById()`), skipping a dedicated Repository layer. While this is acceptable with MyBatis-Plus's BaseMapper, it does blur the boundary between business logic and data access.
