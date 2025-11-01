@@ -308,16 +308,34 @@ To ensure high availability, the Store service processes customer orders as soon
 #### 6.2 Performance vs. Reliability
 
 We use asynchronous messaging to separate time-sensitive features like payment and delivery updates from the core ordering flow. This improves system responsiveness and allows the Store service to operate smoothly under high load. Messages are retried if delivery fails, and unprocessed messages are sent to a dead-letter queue for later inspection. These patterns increase reliability but may introduce small delays in edge cases. Developers must design message handlers to be idempotent and monitor retry queues to avoid message overload. While this setup slightly reduces raw performance, it ensures that most user operations complete successfully, even during temporary failures or system spikes.
+The service employs Spring transaction propagation behavior in a highly professional manner:
+Using `@Transactional(propagation = Propagation.REQUIRES_NEW)` ensures critical state updates become immediately visible.
+For example: methods like `createOrderTransaction`, `processPaymentAndUpdateStatus`, etc.
+This guarantees order status visibility to queries without requiring the entire transaction to complete.
 
 #### 6.3 Modularity vs. Complexity
 
 Each major domain—such as inventory, payments, delivery, and email—is implemented as an independent microservice. This modular structure allows teams to develop and deploy each service separately, improving flexibility and maintainability. Internally, each microservice follows a layered architecture that separates controllers, services, and data mappers. This design improves code clarity and testing, but it also adds complexity. Developers must understand the interactions between layers and between services, which can make onboarding and debugging more difficult. To address this, we rely on centralized logging, distributed tracing, and clear documentation across all services.
+Message-Driven Decoupled Architecture
+Use MessagePublisher to publish messages, decoupling from external systems (delivery, notifications)
+Examples: publishDeliveryRequest, publishRefundNotification, publishDeliveryCancellation
+This enhances system flexibility, enabling easy expansion or replacement of message publishing mechanisms
 
 #### 6.4 Extensibility vs. Integration Overhead
 
 The system is built with future growth in mind. By using event-driven communication, new services can be added without changing existing ones. For example, a future analytics or audit service could subscribe to current message queues and begin working immediately. However, this flexibility also brings the need for careful coordination. Message schemas must remain stable and clearly documented to avoid breaking existing consumers. We use generalized Data Transfer Objects (DTOs) to promote reuse, but each new consumer must validate the message content properly to avoid errors. With good schema governance, this trade-off allows the system to grow easily without risking system stability.
 
-#### 6.5 Summary
+#### 6.5 Detailed Logging and Testing
+The service records detailed logs, including key steps and state transitions.
+For example:
+log.info(“Inventory validation successful”),
+log.info(“Stock reserved with reservation ID: {}”, reservationId)
+This significantly enhances monitorability and debugging capabilities.
+The code includes multiple Thread.sleep calls to test the cancellation functionality.
+For example: Delays are implemented at critical steps such as after inventory verification, after inventory reservation, and after payment.
+This enables simulating cancellation operations during order processing in both development and testing phases.
+
+#### 6.6 Summary
 
 Overall, the Store microservice architecture favors availability, reliability, and flexibility to support a smooth and scalable e-commerce experience. To achieve these goals, we accept certain trade-offs, such as temporary inconsistency, moderate latency from message queuing, and added complexity in service interactions. These design decisions reflect a careful balance that enables the system to perform well under real-world demands while remaining easy to extend and maintain over time.
 
