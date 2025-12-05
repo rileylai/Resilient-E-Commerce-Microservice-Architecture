@@ -248,7 +248,3 @@ src/main/java/com/tut2/group3/bank
 - Store systems never need the store wallet ID; the Bank service hardcodes it as `"2"`.
 - Each user may hold **only one account per currency**. Violations are rejected at the service and DB level.
 - `orderId` must be unique per successful debit—reuse triggers `Order already debited`.
-
----
-
-Questions or onboarding needs? Reach out to the platform team—happy shipping! 💸

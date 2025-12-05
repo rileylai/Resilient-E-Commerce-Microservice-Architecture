@@ -3,7 +3,7 @@ spring:
     name: mobile-sales
   datasource:
     username: root
-    password: "514415"
+    password:
     url: jdbc:mysql://localhost:3306/mobile_sales?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Australia/Sydney&useUnicode=true&characterEncoding=UTF-8
     driver-class-name: com.mysql.cj.jdbc.Driver
   sql:
